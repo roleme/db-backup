@@ -19,8 +19,12 @@ list_targets() {
   for file in "${TARGETS_DIR:-/config/targets.d}"/*.env; do
     [ -e "$file" ] || continue
     name=$(basename "$file" .env)
-    check_target_name "$name"
-    printf '%s\n' "$name"
+    if [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+      printf '%s\n' "$name"
+    else
+      log "ERROR: invalid target name '$name', skipping $file" >&2
+      : > "${DBB_SKIPPED:-/tmp/dbb-skipped}"
+    fi
   done
 }
 
@@ -43,6 +47,35 @@ parse_target() {
     fi
     TARGET_VARS[$key]=$value
   done < "$file"
+  for key in "${!TARGET_VARS[@]}"; do
+    case "$key" in
+      *_ENV)
+        [ -z "${TARGET_VARS[${key%_ENV}]+x}" ] || die "target $name: set only one of ${key%_ENV} and $key"
+        ;;
+    esac
+  done
+  if [ -n "${TARGET_VARS[DB_PASSWORD_ENV]+x}" ] && [ -n "${TARGET_VARS[DB_PASSWORD_FILE]+x}" ]; then
+    die "target $name: set only one of DB_PASSWORD_ENV and DB_PASSWORD_FILE"
+  fi
+  for key in SCHEDULE VERIFY_SCHEDULE; do
+    if [ -n "${TARGET_VARS[$key]+x}" ]; then
+      check_schedule "target $name" "$key" "${TARGET_VARS[$key]}"
+    fi
+  done
+}
+
+target_fail_ping() {
+  local file url ref
+  file="${TARGETS_DIR:-/config/targets.d}/$1.env"
+  [ -r "$file" ] || return 0
+  url=$(sed -n 's/^HC_PING_URL=//p' "$file" | head -n 1)
+  if [ -z "$url" ]; then
+    ref=$(sed -n 's/^HC_PING_URL_ENV=//p' "$file" | head -n 1)
+    if [[ "$ref" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      url=${!ref:-}
+    fi
+  fi
+  [ -z "$url" ] || ping_url "$url" /fail
 }
 
 build_child_env() {

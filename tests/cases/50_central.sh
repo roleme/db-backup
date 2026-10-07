@@ -214,11 +214,11 @@ TARGET
   pass "central backup on start"
 }
 
-test_central_bad_target_file_name_stops_start() {
-  local data bk name rc
-  data=$(new_volume badname_data)
-  bk=$(new_volume badname_bk)
-  name=dbbtest_badname_$$
+test_central_bad_target_is_skipped_not_fatal() {
+  local data bk name tab logs
+  data=$(new_volume skip_data)
+  bk=$(new_volume skip_bk)
+  name=dbbtest_skip_$$
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/a.db "create table t (x)"; sqlite3 /data/z.db "create table t (x)"'
   reset_targets
   write_target a <<'TARGET'
@@ -233,14 +233,195 @@ TARGET
 DRIVER=sqlite
 SQLITE_PATHS=/data/z.db
 TARGET
-  docker run -d --name "$name" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  write_target broken <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/a.db
+BOGUS=1
+HC_PING_URL=http://mockping:8080/t_cen_broken
+TARGET
+  docker run -d --name "$name" --network "$NETWORK" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  if ! wait_for 20 "docker exec $name pgrep -x supercronic > /dev/null 2>&1"; then
+    docker logs "$name" >&2
+    docker rm -fv "$name" > /dev/null
+    fail "bad targets stopped the good ones"
+  fi
+  tab=$(docker exec "$name" cat /tmp/crontab)
+  logs=$(docker logs "$name" 2>&1)
+  docker exec "$name" test -e /tmp/dbb-skipped || {
+    docker rm -fv "$name" > /dev/null
+    fail "no marker that targets were skipped"
+  }
+  docker rm -fv "$name" > /dev/null
+  assert_contains "$tab" "db-backup-run a backup" "good target a is scheduled"
+  assert_contains "$tab" "db-backup-run z backup" "good target z is scheduled"
+  assert_not_contains "$tab" "my.app" "the badly named target is not scheduled"
+  assert_not_contains "$tab" "broken" "the invalid target is not scheduled"
+  assert_contains "$logs" "invalid target name 'my.app'" "the skipped name is reported"
+  assert_contains "$logs" "unknown key BOGUS" "the skipped target's error is reported"
+  ping_seen /t_cen_broken/fail || fail "no fail ping for the skipped target"
+  pass "central bad target is skipped not fatal"
+}
+
+test_central_no_valid_targets_stops_start() {
+  local bk name rc out
+  bk=$(new_volume none_bk)
+  name=dbbtest_none_$$
+  reset_targets
+  write_target broken <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/a.db
+BOGUS=1
+TARGET
+  docker run -d --name "$name" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
   if ! wait_for 20 "[ \"\$(docker inspect -f '{{.State.Running}}' $name)\" = false ]"; then
     docker rm -fv "$name" > /dev/null
-    fail "a badly named target file did not stop the container; later targets were silently dropped"
+    fail "a container with no valid target kept running"
   fi
   rc=$(docker inspect -f '{{.State.ExitCode}}' "$name")
-  assert_contains "$(docker logs "$name" 2>&1)" "invalid target name 'my.app'" "the error names the file"
+  out=$(docker logs "$name" 2>&1)
   docker rm -fv "$name" > /dev/null
-  assert_eq "$rc" 1 "start refused with a failure status"
-  pass "central bad target file name stops start"
+  assert_eq "$rc" 1 "exit status"
+  assert_contains "$out" "no valid targets" "message"
+  pass "central no valid targets stops start"
+}
+
+test_central_rejects_bad_schedules() {
+  local data bk name rc out
+  data=$(new_volume sched_data)
+  bk=$(new_volume sched_bk)
+  sqlite_data "$data"
+  reset_targets
+  write_target short <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+SCHEDULE=0 3 * *
+TARGET
+  write_target inject <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+SCHEDULE=* * * * * touch /backups/PWNED; echo
+TARGET
+  write_target badverify <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+VERIFY_SCHEDULE=0 3 * * *; id
+TARGET
+  write_target five <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+SCHEDULE=0 3 * * *
+TARGET
+  write_target seven <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+SCHEDULE=*/5 * * * * * *
+TARGET
+  write_target macro <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+SCHEDULE=@daily
+TARGET
+  for name in short inject badverify; do
+    rc=0
+    out=$(dbbr "$bk" -v "$data:/data" -- "$name" check 2>&1) || rc=$?
+    assert_eq "$rc" 1 "$name exit code"
+    assert_contains "$out" "invalid schedule" "$name message"
+  done
+  for name in five seven macro; do
+    dbbr "$bk" -v "$data:/data" -- "$name" check > /dev/null || fail "a valid schedule was refused: $name"
+  done
+  pass "central rejects bad schedules"
+}
+
+test_central_rejects_ambiguous_keys() {
+  local bk out rc
+  bk=$(new_volume amb_bk)
+  reset_targets
+  write_target both <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+HC_PING_URL=http://mockping:8080/x
+HC_PING_URL_ENV=SOME_URL
+TARGET
+  write_target pw <<'TARGET'
+DRIVER=postgres
+DB_HOST=postgres
+DB_USER=dbb
+DB_PASSWORD_ENV=PW
+DB_PASSWORD_FILE=/run/pw
+DATABASES=app
+TARGET
+  rc=0
+  out=$(dbbr "$bk" -- both check 2>&1) || rc=$?
+  assert_eq "$rc" 1 "both ping keys exit code"
+  assert_contains "$out" "set only one of HC_PING_URL and HC_PING_URL_ENV" "both ping keys message"
+  rc=0
+  out=$(dbbr "$bk" -- pw check 2>&1) || rc=$?
+  assert_eq "$rc" 1 "both password keys exit code"
+  assert_contains "$out" "set only one of DB_PASSWORD_ENV and DB_PASSWORD_FILE" "both password keys message"
+  pass "central rejects ambiguous keys"
+}
+
+test_central_edit_after_start_is_ignored_until_restart() {
+  local data bk name before
+  data=$(new_volume snap_data)
+  bk=$(new_volume snap_bk)
+  name=dbbtest_snap_$$
+  sqlite_data "$data"
+  reset_targets
+  write_target live <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/app.db
+SCHEDULE=*/3 * * * * * *
+HC_PING_URL=http://mockping:8080/t_cen_snap
+TARGET
+  docker run -d --name "$name" --network "$NETWORK" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  if ! wait_for 25 'ping_seen /t_cen_snap'; then
+    docker logs "$name" >&2
+    docker rm -fv "$name" > /dev/null
+    fail "the scheduled run never pinged"
+  fi
+  printf 'BOGUS=1\n' >> "$TARGETS_HOST/live.env"
+  before=$(ping_count /t_cen_snap)
+  if ! wait_for 25 "[ \"\$(ping_count /t_cen_snap)\" -gt \"$before\" ]"; then
+    docker logs "$name" >&2
+    docker rm -fv "$name" > /dev/null
+    fail "runs stopped after the target file was edited"
+  fi
+  docker rm -fv "$name" > /dev/null
+  ! ping_seen /t_cen_snap/fail || fail "a fail ping was sent after the edit"
+  pass "central edit after start is ignored until restart"
+}
+
+test_central_scheduler_rejected_schedule_is_skipped() {
+  local data bk name tab
+  data=$(new_volume badsched_data)
+  bk=$(new_volume badsched_bk)
+  name=dbbtest_badsched_$$
+  docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/a.db "create table t (x)"; sqlite3 /data/b.db "create table t (x)"'
+  reset_targets
+  write_target a <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/a.db
+TARGET
+  write_target b <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/b.db
+SCHEDULE=99 99 * * *
+TARGET
+  docker run -d --name "$name" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  if ! wait_for 20 "docker exec $name pgrep -x supercronic > /dev/null 2>&1"; then
+    docker logs "$name" >&2
+    docker rm -fv "$name" > /dev/null
+    fail "a target the scheduler rejects stopped the container"
+  fi
+  tab=$(docker exec "$name" cat /tmp/crontab)
+  docker exec "$name" test -e /tmp/dbb-skipped || {
+    docker rm -fv "$name" > /dev/null
+    fail "no marker that a target was skipped"
+  }
+  docker rm -fv "$name" > /dev/null
+  assert_contains "$tab" "db-backup-run a backup" "the good target is scheduled"
+  assert_not_contains "$tab" "db-backup-run b" "the rejected target is not scheduled"
+  pass "central scheduler rejected schedule is skipped"
 }

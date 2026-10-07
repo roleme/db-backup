@@ -103,3 +103,15 @@ echo "tables:$(cat shop-[0-9]*.sql.gz.tables)"')
   dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify after excluding rows failed"
   pass "mysql exclude table data"
 }
+
+test_mysql_exclude_leaving_orphans_is_caught() {
+  local bk out
+  bk=$(new_volume myorph_bk)
+  local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=bkp -e DB_PASSWORD=bkppw -e DATABASES=fkshop -e EXCLUDE_TABLE_DATA=parent)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup failed"
+  if out=$(dbb "$bk" "${env[@]}" -- verify 2>&1); then
+    fail "verify accepted orphaned child rows"
+  fi
+  assert_contains "$out" "orphaned" "verify names the reason"
+  pass "mysql exclude leaving orphans is caught"
+}

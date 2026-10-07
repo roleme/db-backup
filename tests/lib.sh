@@ -128,3 +128,9 @@ dbbr() {
   docker run --rm --network "$NETWORK" -v "$vol:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" \
     --entrypoint db-backup-run ${flags[@]+"${flags[@]}"} "$IMAGE" "$@"
 }
+
+ping_count() {
+  local out
+  out=$(pings)
+  grep -cx "PING GET $1" <<< "$out" || true
+}

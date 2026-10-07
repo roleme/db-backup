@@ -44,6 +44,10 @@ ping_url() {
   return 0
 }
 
+check_schedule() {
+  [[ "$3" =~ ^@[a-z]+$ ]] || [[ "$3" =~ ^[0-9A-Za-z*/,?-]+(\ [0-9A-Za-z*/,?-]+){4,6}$ ]] || die "$1: invalid schedule in $2: $3"
+}
+
 load_config() {
   require_env DRIVER
   case "$DRIVER" in

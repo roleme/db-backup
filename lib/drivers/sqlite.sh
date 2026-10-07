@@ -47,7 +47,7 @@ driver_suffix() {
 
 driver_dump() {
   local dir copy rc
-  dir=$(mktemp -d "$BACKUP_DIR/.sqlite.XXXXXX") || return 1
+  dir=$(mktemp -d "$BACKUP_DIR/.sqlite.$1.XXXXXX") || return 1
   copy="$dir/db"
   if ! sqlite3 -cmd '.timeout 30000' "${SQLITE_FILES[$1]}" "VACUUM INTO '$copy'" || ! sqlite_exclude_rows "$copy"; then
     rm -rf "$dir"
@@ -61,7 +61,7 @@ driver_dump() {
 
 driver_expected_tables() {
   local copy count
-  copy=$(mktemp "$BACKUP_DIR/.sqlite.XXXXXX") || return 1
+  copy=$(mktemp "$BACKUP_DIR/.sqlite.$1.XXXXXX") || return 1
   if gunzip -c "$2" > "$copy" && count=$(sqlite_count "$copy"); then
     rm -f "$copy"
     printf '%s\n' "$count"
@@ -73,7 +73,7 @@ driver_expected_tables() {
 
 driver_verify() {
   local copy res count fk=""
-  copy=$(mktemp "$BACKUP_DIR/.sqlite.XXXXXX") || return 1
+  copy=$(mktemp "$BACKUP_DIR/.sqlite.$1.XXXXXX") || return 1
   if ! gunzip -c "$2" > "$copy"; then
     rm -f "$copy"
     return 1

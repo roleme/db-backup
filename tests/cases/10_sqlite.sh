@@ -130,12 +130,14 @@ test_stale_partials_removed() {
   data=$(new_volume stale_data)
   bk=$(new_volume stale_bk)
   sqlite_data "$data"
-  in_vol "$bk" 'cd /backups; touch -d "2 hours ago" .app.partial.OLD111 .sqlite.OLD222; touch .app.partial.FRESH3'
+  in_vol "$bk" 'cd /backups; touch -d "2 hours ago" .app.partial.OLD111 .sqlite.app.OLD222 .other.partial.OLD444 .sqlite.other.OLD555; touch .app.partial.FRESH3'
   dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -- backup > /dev/null
   out=$(in_vol "$bk" 'ls -A /backups')
   assert_not_contains "$out" "OLD111" "stale partial removed"
   assert_not_contains "$out" "OLD222" "stale sqlite temp removed"
   assert_contains "$out" "FRESH3" "recent partial kept"
+  assert_contains "$out" "OLD444" "another target's old partial is not touched"
+  assert_contains "$out" "OLD555" "another target's old sqlite temp is not touched"
   pass "stale partials removed"
 }
 

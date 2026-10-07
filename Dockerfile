@@ -31,6 +31,6 @@ COPY LICENSE.upstream NOTICE /usr/share/doc/db-backup/
 
 VOLUME /backups
 
-HEALTHCHECK --interval=5m --timeout=3s CMD pgrep -x supercronic > /dev/null || exit 1
+HEALTHCHECK --interval=5m --timeout=3s CMD pgrep -x supercronic > /dev/null && [ ! -e /tmp/dbb-skipped ] || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
