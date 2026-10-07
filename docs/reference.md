@@ -104,7 +104,7 @@ Give the backup its own user per database.
 /backups/last/<file>.tables           table count of that dump
 ```
 
-The four tiers are hardlinks of one file, so keeping all of them costs one copy. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
+The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times: `last` drops files older than `KEEP_MINS` minutes, `daily` files stamped before today minus `KEEP_DAYS` days, `weekly` ISO weeks that started before today minus `KEEP_WEEKS` weeks, and `monthly` months that started before the first of this month minus `KEEP_MONTHS` months. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
 
 ## Verification
 
@@ -154,11 +154,11 @@ A run is killed after `TIMEOUT` seconds and pings `/fail`. In central mode, runs
 
 ## Image
 
-Debian with the PostgreSQL 16 client (`pg_dump` for PostgreSQL 16 servers; a server of another major version needs its client added to the `Dockerfile`), `mariadb-dump`, `sqlite3` and `supercronic`. About 214 MB uncompressed; idle memory about 15 MiB; a 205 MB SQLite database backs up and compresses under a 64 MB limit.
+Debian with the PostgreSQL 16 client (`pg_dump` for PostgreSQL 16 servers; a server of another major version needs its client added to the `Dockerfile`), `mariadb-dump`, `sqlite3` and `supercronic`, plus the tool itself: one statically linked Go binary, installed as `db-backup`, `db-backup-run` and `entrypoint`. About 218 MB uncompressed; idle memory about 15 MiB; a 205 MB SQLite database backs up and compresses under a 64 MB limit.
 
 ## Development
 
-`tests/run.sh [filter]` builds the image and runs every `test_*` against real PostgreSQL, MySQL and SQLite containers with a mock ping endpoint. It needs Docker with Compose v2. The scheduler (`supercronic`) is built from source in the `Dockerfile` at a pinned version and verified by the Go checksum database; Renovate bumps that version and the builder image.
+`go test ./...` runs the unit tests (retention, configuration, schedules, process handling, adapters) without Docker. `tests/run.sh [filter]` builds the image and runs every `test_*` against real PostgreSQL, MySQL and SQLite containers with a mock ping endpoint. It needs Docker with Compose v2. The scheduler (`supercronic`) is built from source in the `Dockerfile` at a pinned version and verified by the Go checksum database; Renovate bumps that version and the builder image.
 
 ## Licence
 
