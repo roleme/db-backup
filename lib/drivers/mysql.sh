@@ -38,7 +38,7 @@ driver_verify() {
   local target=$1 dump=$2 expected=$3 scratch="dbb_verify_$1" got="" rc=0
   mariadb "${MYSQL_ARGS[@]}" -e "DROP DATABASE IF EXISTS \`$scratch\`" || return 1
   mariadb "${MYSQL_ARGS[@]}" -e "CREATE DATABASE \`$scratch\`" || return 1
-  if gunzip -c "$dump" | mariadb "${MYSQL_ARGS[@]}" --one-database "$scratch"; then
+  if gunzip -c "$dump" | sed -E 's/DEFINER=`[^`]*`@`[^`]*`//g' | mariadb "${MYSQL_ARGS[@]}" --one-database "$scratch"; then
     got=$(mysql_table_count "$scratch") || rc=1
   else
     rc=1
