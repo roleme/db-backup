@@ -108,3 +108,29 @@ func TestFailPingURL(t *testing.T) {
 		t.Errorf("missing = %q", got)
 	}
 }
+
+func TestResolveReportsTheFirstUnsetVariableInKeyOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeTarget(t, dir, "one", "DRIVER=sqlite\nHC_PING_URL_ENV=ONE_URL\nDB_PASSWORD_ENV=ONE_PW\n")
+	tg, err := LoadTarget(dir, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 60; i++ {
+		_, err := tg.Resolve(func(string) string { return "" })
+		if err == nil || !strings.Contains(err.Error(), "environment variable ONE_PW (from DB_PASSWORD_ENV) is not set") {
+			t.Fatalf("run %d: error = %v, want the DB_PASSWORD_ENV one first", i, err)
+		}
+	}
+}
+
+func TestAmbiguousPairsAreReportedInKeyOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeTarget(t, dir, "two", "DRIVER=sqlite\nHC_VERIFY_PING_URL=a\nHC_VERIFY_PING_URL_ENV=B\nHC_PING_URL=a\nHC_PING_URL_ENV=B\n")
+	for i := 0; i < 60; i++ {
+		_, err := LoadTarget(dir, "two")
+		if err == nil || !strings.Contains(err.Error(), "set only one of HC_PING_URL and HC_PING_URL_ENV") {
+			t.Fatalf("run %d: error = %v", i, err)
+		}
+	}
+}
