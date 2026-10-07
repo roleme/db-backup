@@ -6,6 +6,7 @@ Scheduled, restore-tested backups for PostgreSQL, MySQL and SQLite, in one small
 - **Retention.** Keeps `last`, `daily`, `weekly` and `monthly` copies as hardlinks of one file, so keeping all four costs one copy.
 - **Restore test.** On a schedule it restores the newest dump into a scratch database and compares the table count. A dump that compresses fine but cannot be replayed is caught.
 - **Alerting.** Pings a Healthchecks-style URL after each run, with `/fail` appended on failure. A ping error never fails a dump.
+- **One container, many databases.** Each database is a small target file; targets run isolated from each other, with their own lock, timeout and ping.
 
 ## Run it
 
@@ -15,54 +16,31 @@ services:
     image: ghcr.io/roleme/db-backup:latest
     restart: unless-stopped
     environment:
-      DRIVER: postgres
-      DB_HOST: postgres
-      DB_USER: backup
-      DB_PASSWORD: ${DB_PASSWORD}
-      DATABASES: app
-      SCHEDULE: "20 1 * * *"
-      VERIFY_SCHEDULE: "0 5 * * 0"
-      HC_PING_URL: ${HC_PING_URL}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      APP_PING_URL: ${APP_PING_URL}
     volumes:
+      - ./targets.d:/config/targets.d:ro
       - ./backups:/backups
 ```
 
-## Configuration
-
-| Variable | Meaning |
-|---|---|
-| `DRIVER` | `postgres`, `mysql` or `sqlite` (required) |
-| `DB_HOST`, `DB_PORT`, `DB_USER` | connection (postgres, mysql) |
-| `DB_PASSWORD` or `DB_PASSWORD_FILE` | password, or a file that holds it |
-| `DATABASES` | comma-separated database names (postgres, mysql) |
-| `SQLITE_PATHS` | comma-separated database files; the file name without extension names the dump. Mount the application's data **directory** read-write, not the single file |
-| `EXTRA_PATHS` | comma-separated directories archived as `.tar.gz` beside the dumps |
-| `EXTRA_OPTS` | extra flags for `pg_dump` or `mariadb-dump` (no `-Z`, compression is `GZIP_LEVEL`) |
-| `SCHEDULE`, `VERIFY_SCHEDULE` | cron expressions; default `@daily`, verification off unless set |
-| `BACKUP_ON_START` | `TRUE` runs one dump when the container starts |
-| `KEEP_MINS`, `KEEP_DAYS`, `KEEP_WEEKS`, `KEEP_MONTHS` | retention per tier, defaults 1440, 7, 4, 6 |
-| `GZIP_LEVEL` | 1 to 9, default 6 |
-| `HC_PING_URL`, `HC_VERIFY_PING_URL` | pinged on success; `/fail` is appended on failure |
-
-The backup user needs `CREATEDB` on PostgreSQL, and `ALL` on `` `dbb\_verify\_%`.* `` on MySQL, for the scratch database that verification restores into.
-
-## Output
+`targets.d/app.env`, one file per database (the file name is the target name):
 
 ```
-/backups/last/<name>-<yyyymmdd-hhmmss>.<sql|db|tar>.gz
-/backups/daily/   /backups/weekly/   /backups/monthly/      same names, one per period
-/backups/<tier>/<name>-latest...                            symlink to the newest file
+DRIVER=postgres
+DB_HOST=postgres
+DB_USER=backup
+DB_PASSWORD_ENV=APP_DB_PASSWORD
+DATABASES=app
+SCHEDULE=20 1 * * *
+VERIFY_SCHEDULE=0 5 * * 0
+HC_PING_URL_ENV=APP_PING_URL
 ```
 
-A dump is written to a temporary file and moved into place only when it is complete, so a failed or killed run never leaves something that looks valid. A dump with no tables counts as a failure.
+Passwords and ping URLs never go in a target file: a key ending in `_ENV` names an environment variable of the container. Target files are parsed, not executed, and an unknown key is an error. With no target files the container runs a single database configured from environment variables with the same names.
 
-## Restore
+## More
 
-```
-gunzip -c app-latest.sql.gz | psql -d newdb        # PostgreSQL
-gunzip -c app-latest.sql.gz | mariadb newdb        # MySQL
-gunzip -c app-latest.db.gz > app.db                # SQLite, with the application stopped
-```
+[docs/reference.md](docs/reference.md) has every key, the database privileges to grant, how to reach the databases, excluding table rows, the output layout, verification and restoring.
 
 ## Working on this repository
 
