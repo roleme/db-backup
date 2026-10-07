@@ -8,7 +8,7 @@ Dumps are plain `pg_dump`, `mariadb-dump` and `sqlite3` output, so they restore 
 
 One container can serve many databases ("central mode"), or one container can serve one database ("single-target mode").
 
-Central mode reads one env file per target from `/config/targets.d` (`/config/targets.d/<name>.env`). When that directory holds no `*.env` files, the container runs in single-target mode, configured by environment variables with the same names.
+Central mode reads one env file per target from `/config/targets.d` (`/config/targets.d/<name>.env`). When that directory holds no `*.env` files, the container runs in single-target mode, configured by plain environment variables with the same names (`DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD` or `DB_PASSWORD_FILE`, `DATABASES`, `HC_PING_URL`, and so on). Single-target mode has no `*_ENV` indirection, no `TIMEOUT` and no lock; the sections below that mention them describe central mode.
 
 ```yaml
 services:
@@ -71,7 +71,7 @@ Target files are parsed, not executed. Blank lines and lines starting with `#` a
 
 Dump names are shared by all targets in `/backups`, so they must be unique across targets. The container refuses to start when two targets would write the same dump name.
 
-The crontab is generated when the container starts: after adding or changing a target, restart the container. `BACKUP_ON_START=TRUE` runs every target once at start.
+The crontab and the duplicate-name check are built when the container starts, so restart the container after adding a target or changing a schedule. Other keys are read again on every run, without validation: a typo introduced into a running target makes its runs fail without a ping, so restart after any edit and watch the start-up output. `BACKUP_ON_START=TRUE` runs every target once at start. A target file that fails validation stops the container at start. Every target defaults to `@daily` and the runs start together at midnight, so give targets their own `SCHEDULE` to stagger them.
 
 ## Reaching the databases
 
@@ -81,8 +81,14 @@ The container must be able to open a connection to each database server. In Dock
 
 Give the backup its own user per database.
 
-- **PostgreSQL:** `CREATE ROLE backup LOGIN PASSWORD '...' CREATEDB IN ROLE pg_read_all_data;`. `CREATEDB` is for the scratch database that verification restores into. Dumps are written with `--no-owner --no-privileges`, so they restore under any role; ownership becomes the restoring user's. Only trusted extensions can be restored by a non-superuser (for example `pgcrypto` and `uuid-ossp` are, `pg_stat_statements` is not): check `\dx` on the server before relying on verification.
-- **MySQL:** `GRANT SELECT, SHOW VIEW, TRIGGER ON db.* TO 'backup'@'%'; GRANT SHOW_ROUTINE ON *.* TO 'backup'@'%'; GRANT ALL ON `dbb\_verify\_%`.* TO 'backup'@'%';`. Without `TRIGGER` or `SHOW_ROUTINE` the dump silently leaves triggers and routines out. With the binary log on (the MySQL 8.4 default), restoring triggers and functions also needs `log_bin_trust_function_creators=1` on the server; verification strips `DEFINER` clauses and each verification restore is written to the binary log.
+- **PostgreSQL:** `CREATE ROLE backup LOGIN PASSWORD '...' CREATEDB IN ROLE pg_read_all_data;`. `CREATEDB` is for the scratch database that verification restores into, and the role needs `CONNECT` on the `postgres` database. `pg_read_all_data` does not cover large objects: a database that uses them fails the dump with `permission denied for large object`. Dumps are written with `--no-owner --no-privileges`, so they restore under any role; ownership becomes the restoring user's. Only trusted extensions can be restored by a non-superuser (for example `pgcrypto` and `uuid-ossp` are, `pg_stat_statements` is not): check `\dx` on the server before relying on verification.
+- **MySQL:** grant the three statements below. Without `TRIGGER` or `SHOW_ROUTINE` the dump silently leaves triggers and routines out, and nothing detects that, because a user without those privileges cannot see them either. With the binary log on (the MySQL 8.4 default), restoring triggers and functions also needs `log_bin_trust_function_creators=1` on the server; verification strips `DEFINER` clauses, and each verification restore is written to the binary log. Excluding the rows of a parent table can leave orphaned child rows that verification does not detect.
+
+  ```sql
+  GRANT SELECT, SHOW VIEW, TRIGGER ON db.* TO 'backup'@'%';
+  GRANT SHOW_ROUTINE ON *.* TO 'backup'@'%';
+  GRANT ALL ON `dbb\_verify\_%`.* TO 'backup'@'%';
+  ```
 - **SQLite:** mount the application's data **directory** read-write. The dump uses `VACUUM INTO`, which reads one consistent snapshot even while the application writes, produces a compacted copy and needs the `-wal` and `-shm` files next to the database; a read-only or single-file mount cannot open a WAL database.
 
 ## Excluding table rows
@@ -119,11 +125,11 @@ tar -xzf data-latest.tar.gz                           # extra paths
 
 ## Limits
 
-A run is killed after `TIMEOUT` seconds and pings `/fail`. Runs of the same target (backup and verify) are serialised with a lock; different targets run concurrently. A restart interrupts any dump in progress; the next run cleans up its leftovers.
+A run is killed after `TIMEOUT` seconds and pings `/fail`. In central mode, runs of the same target (backup and verify) are serialised with a lock and different targets run concurrently. A restart interrupts any dump in progress; the next run cleans up its leftovers.
 
 ## Image
 
-Debian with `pg_dump` (the client matching the server's major version), `mariadb-dump`, `sqlite3` and `supercronic`. About 214 MB uncompressed; idle memory about 15 MiB; a 205 MB SQLite database backs up and compresses under a 64 MB limit.
+Debian with the PostgreSQL 16 client (`pg_dump` for PostgreSQL 16 servers; a server of another major version needs its client added to the `Dockerfile`), `mariadb-dump`, `sqlite3` and `supercronic`. About 214 MB uncompressed; idle memory about 15 MiB; a 205 MB SQLite database backs up and compresses under a 64 MB limit.
 
 ## Development
 

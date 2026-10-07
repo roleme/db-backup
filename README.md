@@ -27,7 +27,7 @@ services:
 
 ```
 DRIVER=postgres
-DB_HOST=postgres
+DB_HOST=app-postgres
 DB_USER=backup
 DB_PASSWORD_ENV=APP_DB_PASSWORD
 DATABASES=app
@@ -36,7 +36,9 @@ VERIFY_SCHEDULE=0 5 * * 0
 HC_PING_URL_ENV=APP_PING_URL
 ```
 
-Passwords and ping URLs never go in a target file: a key ending in `_ENV` names an environment variable of the container. Target files are parsed, not executed, and an unknown key is an error. With no target files the container runs a single database configured from environment variables with the same names.
+There is no plain password key: a key ending in `_ENV` names an environment variable of the container, and its value is passed to that target only. Ping URLs can be given the same way (`HC_PING_URL_ENV`) or directly (`HC_PING_URL`). Target files are parsed, not executed, and an unknown key is an error.
+
+With no target files the container runs a single database configured from plain environment variables (`DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DATABASES`, `HC_PING_URL`, ...). That mode has no `*_ENV` indirection, `TIMEOUT` or per-target lock.
 
 ## More
 
