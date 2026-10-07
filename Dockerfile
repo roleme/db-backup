@@ -1,6 +1,11 @@
-FROM golang:1.26 AS supercronic
+FROM golang:1.26 AS build
 
-RUN CGO_ENABLED=0 GOBIN=/out go install github.com/aptible/supercronic@v0.2.49
+WORKDIR /src
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/db-backup ./cmd/db-backup \
+    && CGO_ENABLED=0 GOBIN=/out go install github.com/aptible/supercronic@v0.2.49
 
 FROM debian:trixie-slim AS mariadb-dump
 
@@ -18,19 +23,19 @@ RUN apt-get update \
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends mariadb-client-core postgresql-client-16 procps sqlite3 tzdata \
+    && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=mariadb-dump /usr/bin/mariadb-dump /usr/bin/mariadb-dump
-COPY --from=supercronic /out/supercronic /usr/local/bin/supercronic
+COPY --from=build /out/supercronic /usr/local/bin/supercronic
+COPY --from=build /out/db-backup /usr/local/bin/db-backup
+RUN ln /usr/local/bin/db-backup /usr/local/bin/db-backup-run \
+    && ln /usr/local/bin/db-backup /usr/local/bin/entrypoint
 
-COPY --chmod=0755 lib/ /usr/local/lib/db-backup/
-COPY --chmod=0755 bin/db-backup.sh /usr/local/bin/db-backup
-COPY --chmod=0755 bin/db-backup-run.sh /usr/local/bin/db-backup-run
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 COPY LICENSE.upstream NOTICE /usr/share/doc/db-backup/
 
 VOLUME /backups
 
-HEALTHCHECK --interval=5m --timeout=3s CMD pgrep -x supercronic > /dev/null && [ ! -e /tmp/dbb-skipped ] || exit 1
+HEALTHCHECK --interval=5m --timeout=3s CMD ["/usr/local/bin/db-backup", "healthcheck"]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
