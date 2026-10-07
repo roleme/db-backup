@@ -76,7 +76,7 @@ backup_all() {
   local failures=0 target path
   driver_validate
   validate_extra_paths
-  find "$BACKUP_DIR" -maxdepth 1 \( -name '.*.partial.*' -o -name '.sqlite.*' \) -mmin +60 -delete
+  find "$BACKUP_DIR" -maxdepth 1 \( -name '.*.partial.*' -o -name '.sqlite.*' \) -mmin +60 -exec rm -rf {} +
   while IFS= read -r target; do
     if ! backup_one "$target"; then
       log "ERROR: dump of $target failed" >&2

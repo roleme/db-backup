@@ -152,3 +152,60 @@ test_sqlite_empty_database_fails() {
   assert_eq "$(in_vol "$bk" 'ls -A /backups')" "" "nothing stored for an empty dump"
   pass "sqlite empty database fails"
 }
+
+
+test_sqlite_dump_is_compacted() {
+  local data bk size
+  data=$(new_volume compact_data)
+  bk=$(new_volume compact_bk)
+  docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/big.db "create table t (x blob); with recursive c(i) as (select 1 union all select i+1 from c where i < 3000) insert into t select randomblob(1024) from c; delete from t;"'
+  dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/big.db -- backup > /dev/null
+  size=$(in_vol "$bk" 'gunzip -c /backups/last/big-latest.db.gz | wc -c')
+  [ "$size" -lt 100000 ] || fail "the dump holds $size bytes; a compacted copy is under 100000"
+  pass "sqlite dump is compacted"
+}
+
+test_sqlite_exclude_table_data() {
+  local data bk out
+  data=$(new_volume excl_data)
+  bk=$(new_volume excl_bk)
+  sqlite_data "$data"
+  local -a env=(-v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -e EXCLUDE_TABLE_DATA=notes)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
+  out=$(in_vol "$bk" 'cd /backups/last
+gunzip -c app-latest.db.gz > /tmp/x.db
+echo "notes:$(sqlite3 /tmp/x.db "select count(*) from notes")"
+echo "tables:$(cat app-[0-9]*.db.gz.tables)"')
+  assert_contains "$out" "notes:0" "rows of the excluded table are gone"
+  assert_contains "$out" "tables:2" "the schema of the excluded table is kept"
+  dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify after excluding rows failed"
+  pass "sqlite exclude table data"
+}
+
+test_sqlite_exclude_breaks_foreign_keys() {
+  local data bk out
+  data=$(new_volume fk_data)
+  bk=$(new_volume fk_bk)
+  docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/fk.db "create table parent (id integer primary key); create table child (id integer primary key, pid integer references parent(id)); insert into parent values (1); insert into child values (1, 1);"'
+  local -a env=(-v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/fk.db -e EXCLUDE_TABLE_DATA=parent)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup failed"
+  if out=$(dbb "$bk" "${env[@]}" -- verify 2>&1); then
+    fail "verify accepted orphaned rows"
+  fi
+  assert_contains "$out" "foreign key" "verify names the reason"
+  pass "sqlite exclude breaks foreign keys"
+}
+
+test_sqlite_exclude_unknown_table() {
+  local data bk out rc=0
+  data=$(new_volume exclbad_data)
+  bk=$(new_volume exclbad_bk)
+  sqlite_data "$data"
+  out=$(dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -e EXCLUDE_TABLE_DATA=nope \
+    -e HC_PING_URL=http://mockping:8080/t_excl_bad -- backup 2>&1) || rc=$?
+  assert_eq "$rc" 1 "unknown excluded table exit code"
+  assert_contains "$out" "no such table" "unknown excluded table message"
+  ping_seen /t_excl_bad/fail || fail "fail ping not sent"
+  assert_eq "$(in_vol "$bk" 'ls -A /backups')" "" "nothing left behind"
+  pass "sqlite exclude unknown table"
+}

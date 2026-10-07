@@ -58,6 +58,7 @@ load_config() {
   export GZIP_LEVEL=${GZIP_LEVEL:-6}
   export EXTRA_OPTS=${EXTRA_OPTS:-}
   export EXTRA_PATHS=${EXTRA_PATHS:-}
+  export EXCLUDE_TABLE_DATA=${EXCLUDE_TABLE_DATA:-}
   export HC_PING_URL=${HC_PING_URL:-}
   export HC_VERIFY_PING_URL=${HC_VERIFY_PING_URL:-}
   local name

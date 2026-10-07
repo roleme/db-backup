@@ -6,6 +6,20 @@ sqlite_count() {
   sqlite3 "$1" "select count(*) from sqlite_master where type = 'table'"
 }
 
+sqlite_ident() {
+  local id=${1//\"/\"\"}
+  printf '"%s"' "$id"
+}
+
+sqlite_exclude_rows() {
+  local table sql=""
+  [ -n "${EXCLUDE_TABLE_DATA:-}" ] || return 0
+  while IFS= read -r table; do
+    sql+="DELETE FROM $(sqlite_ident "$table"); "
+  done < <(split_list "$EXCLUDE_TABLE_DATA")
+  sqlite3 "$1" "${sql}VACUUM"
+}
+
 driver_validate() {
   require_env SQLITE_PATHS
   local path name
@@ -29,15 +43,16 @@ driver_suffix() {
 }
 
 driver_dump() {
-  local copy rc
-  copy=$(mktemp "$BACKUP_DIR/.sqlite.XXXXXX") || return 1
-  if ! sqlite3 -cmd '.timeout 30000' "${SQLITE_FILES[$1]}" ".backup '$copy'"; then
-    rm -f "$copy"
+  local dir copy rc
+  dir=$(mktemp -d "$BACKUP_DIR/.sqlite.XXXXXX") || return 1
+  copy="$dir/db"
+  if ! sqlite3 -cmd '.timeout 30000' "${SQLITE_FILES[$1]}" "VACUUM INTO '$copy'" || ! sqlite_exclude_rows "$copy"; then
+    rm -rf "$dir"
     return 1
   fi
   gzip "-${GZIP_LEVEL}" < "$copy" > "$2"
   rc=$?
-  rm -f "$copy"
+  rm -rf "$dir"
   return "$rc"
 }
 
@@ -54,7 +69,7 @@ driver_expected_tables() {
 }
 
 driver_verify() {
-  local copy res count
+  local copy res count fk=""
   copy=$(mktemp "$BACKUP_DIR/.sqlite.XXXXXX") || return 1
   if ! gunzip -c "$2" > "$copy"; then
     rm -f "$copy"
@@ -66,6 +81,9 @@ driver_verify() {
     return 1
   fi
   count=$(sqlite_count "$copy") || count=""
+  if [ -n "${EXCLUDE_TABLE_DATA:-}" ]; then
+    fk=$(sqlite3 "$copy" 'PRAGMA foreign_key_check' 2>&1) || fk="check failed: $fk"
+  fi
   rm -f "$copy"
   [ "$res" = ok ] || {
     log "ERROR: $1 integrity_check: $res" >&2
@@ -73,6 +91,10 @@ driver_verify() {
   }
   [ "$count" = "$3" ] || {
     log "ERROR: $1 restored $count tables, expected $3" >&2
+    return 1
+  }
+  [ -z "$fk" ] || {
+    log "ERROR: $1 foreign key violations after excluding rows: $fk" >&2
     return 1
   }
 }
