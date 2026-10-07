@@ -96,3 +96,32 @@ test_postgres_double_compression_fails() {
   ping_seen /t_pg_z/fail || fail "fail ping not sent"
   pass "postgres double compression fails"
 }
+
+
+test_postgres_dedicated_role() {
+  local bk out
+  bk=$(new_volume pgro_bk)
+  local -a env=(-e DRIVER=postgres -e DB_HOST=postgres -e DB_USER=dbb_ro -e DB_PASSWORD=ropw -e DATABASES=app)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup as a read-only role failed"
+  dbb "$bk" "${env[@]}" -e HC_VERIFY_PING_URL=http://mockping:8080/t_pg_ro -- verify > /dev/null \
+    || fail "verify as a read-only role failed"
+  ping_seen /t_pg_ro || fail "verify ping not sent"
+  out=$(in_vol "$bk" 'gunzip -c /backups/last/app-latest.sql.gz | grep -c "OWNER TO" || true')
+  assert_eq "$out" "0" "the dump carries no ownership statements"
+  pass "postgres dedicated role"
+}
+
+
+test_postgres_exclude_table_data() {
+  local bk out
+  bk=$(new_volume pgexcl_bk)
+  local -a env=("${pg_env[@]}" -e DATABASES=app -e EXCLUDE_TABLE_DATA=notes)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
+  out=$(in_vol "$bk" 'cd /backups/last
+echo "rows:$(gunzip -c app-latest.sql.gz | grep -c hello || true)"
+echo "tables:$(cat app-[0-9]*.sql.gz.tables)"')
+  assert_contains "$out" "rows:0" "rows of the excluded table are gone"
+  assert_contains "$out" "tables:2" "the schema of the excluded table is kept"
+  dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify after excluding rows failed"
+  pass "postgres exclude table data"
+}

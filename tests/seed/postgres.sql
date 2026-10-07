@@ -7,3 +7,8 @@ CREATE DATABASE app2;
 \connect app2
 CREATE TABLE items (id int PRIMARY KEY, name text);
 INSERT INTO items VALUES (1, 'widget');
+\connect postgres
+CREATE ROLE dbb_ro LOGIN PASSWORD 'ropw' CREATEDB IN ROLE pg_read_all_data;
+CREATE DATABASE lockdb;
+\connect lockdb
+CREATE TABLE t (id int);

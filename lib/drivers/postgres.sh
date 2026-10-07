@@ -31,10 +31,13 @@ pg_dump_bin() {
 }
 
 driver_dump() {
-  local bin opts=()
+  local bin opts=() table
   bin=$(pg_dump_bin) || return 1
   read -ra opts <<< "$EXTRA_OPTS"
-  "$bin" -d "$1" ${opts[@]+"${opts[@]}"} | gzip "-${GZIP_LEVEL}" > "$2"
+  while IFS= read -r table; do
+    opts+=("--exclude-table-data=$table")
+  done < <(split_list "$EXCLUDE_TABLE_DATA")
+  "$bin" -d "$1" --no-owner --no-privileges --lock-wait-timeout=60s ${opts[@]+"${opts[@]}"} | gzip "-${GZIP_LEVEL}" > "$2"
 }
 
 driver_expected_tables() {

@@ -29,6 +29,14 @@ jobs:
           cache-from: type=gha,scope=db-backup
           cache-to: type=gha,scope=db-backup,mode=max
 
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.74.0
+
+      - name: Scan image
+        run: trivy image --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 db-backup:test
+
       - name: Run tests
         env:
           SKIP_BUILD: "1"

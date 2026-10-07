@@ -24,6 +24,7 @@ cleanup() {
   docker ps -aq --filter "name=dbbtest_" | xargs docker rm -f > /dev/null 2>&1 || true
   docker volume ls -q --filter "name=dbbtest_" | xargs docker volume rm -f > /dev/null 2>&1 || true
   rm -f "${TMPDIR:-/tmp}/dbbtest_pw_$$"
+  rm -rf "${TMPDIR:-/tmp}/dbbtest_targets_$$" "${TMPDIR:-/tmp}/dbbtest_stub_$$"
 }
 
 fail() {
@@ -103,4 +104,33 @@ psql_seed() {
 
 mysql_seed() {
   compose exec -T -e MYSQL_PWD=rootpw mysql mysql -uroot
+}
+
+TARGETS_HOST=${TMPDIR:-/tmp}/dbbtest_targets_$$
+
+reset_targets() {
+  mkdir -p "$TARGETS_HOST"
+  rm -f "$TARGETS_HOST"/*.env
+}
+
+write_target() {
+  cat > "$TARGETS_HOST/$1.env"
+}
+
+dbbr() {
+  local vol=$1 flags=()
+  shift
+  while [ "$1" != "--" ]; do
+    flags+=("$1")
+    shift
+  done
+  shift
+  docker run --rm --network "$NETWORK" -v "$vol:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" \
+    --entrypoint db-backup-run ${flags[@]+"${flags[@]}"} "$IMAGE" "$@"
+}
+
+ping_count() {
+  local out
+  out=$(pings)
+  grep -cx "PING GET $1" <<< "$out" || true
 }

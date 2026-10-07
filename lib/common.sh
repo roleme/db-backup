@@ -44,6 +44,10 @@ ping_url() {
   return 0
 }
 
+check_schedule() {
+  [[ "$3" =~ ^@[a-z]+$ ]] || [[ "$3" =~ ^[0-9A-Za-z*/,?-]+(\ [0-9A-Za-z*/,?-]+){4,6}$ ]] || die "$1: invalid schedule in $2: $3"
+}
+
 load_config() {
   require_env DRIVER
   case "$DRIVER" in
@@ -58,6 +62,7 @@ load_config() {
   export GZIP_LEVEL=${GZIP_LEVEL:-6}
   export EXTRA_OPTS=${EXTRA_OPTS:-}
   export EXTRA_PATHS=${EXTRA_PATHS:-}
+  export EXCLUDE_TABLE_DATA=${EXCLUDE_TABLE_DATA:-}
   export HC_PING_URL=${HC_PING_URL:-}
   export HC_VERIFY_PING_URL=${HC_VERIFY_PING_URL:-}
   local name

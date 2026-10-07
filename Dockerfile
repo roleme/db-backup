@@ -25,11 +25,12 @@ COPY --from=supercronic /out/supercronic /usr/local/bin/supercronic
 
 COPY --chmod=0755 lib/ /usr/local/lib/db-backup/
 COPY --chmod=0755 bin/db-backup.sh /usr/local/bin/db-backup
+COPY --chmod=0755 bin/db-backup-run.sh /usr/local/bin/db-backup-run
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 COPY LICENSE.upstream NOTICE /usr/share/doc/db-backup/
 
 VOLUME /backups
 
-HEALTHCHECK --interval=5m --timeout=3s CMD pgrep -x supercronic > /dev/null || exit 1
+HEALTHCHECK --interval=5m --timeout=3s CMD pgrep -x supercronic > /dev/null && [ ! -e /tmp/dbb-skipped ] || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
