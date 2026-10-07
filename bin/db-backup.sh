@@ -8,14 +8,14 @@ LIB=${DBB_LIB:-/usr/local/lib/db-backup}
 . "$LIB/layout.sh"
 
 usage() {
-  printf 'usage: db-backup backup|verify|check\n' >&2
+  printf 'usage: db-backup backup|verify|check|names\n' >&2
   exit 2
 }
 
 [ $# -eq 1 ] || usage
 cmd=$1
 case "$cmd" in
-  backup | verify | check) ;;
+  backup | verify | check | names) ;;
   *) usage ;;
 esac
 
@@ -135,6 +135,17 @@ case "$cmd" in
     driver_validate
     validate_extra_paths
     log "config ok"
+    ;;
+  names)
+    driver_validate
+    validate_extra_paths
+    suffix=$(driver_suffix)
+    while IFS= read -r target; do
+      printf '%s%s\n' "$target" "$suffix"
+    done < <(driver_targets)
+    while IFS= read -r path; do
+      printf '%s.tar.gz\n' "$(basename "$path")"
+    done < <(split_list "$EXTRA_PATHS")
     ;;
   backup)
     if (backup_all); then

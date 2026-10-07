@@ -25,6 +25,7 @@ COPY --from=supercronic /out/supercronic /usr/local/bin/supercronic
 
 COPY --chmod=0755 lib/ /usr/local/lib/db-backup/
 COPY --chmod=0755 bin/db-backup.sh /usr/local/bin/db-backup
+COPY --chmod=0755 bin/db-backup-run.sh /usr/local/bin/db-backup-run
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 COPY LICENSE.upstream NOTICE /usr/share/doc/db-backup/
 
