@@ -46,9 +46,10 @@ With no target files the container runs a single database configured from plain 
 
 ## Working on this repository
 
+- `go test ./...` runs the Go unit tests; no Docker needed.
 - `tests/run.sh [filter]` builds the image and runs every `test_*` function whose name contains the filter, against real PostgreSQL, MySQL and SQLite containers. It needs Docker with Compose v2.
 - Write the failing test first. Every behaviour here has one.
-- Lint with `shellcheck --severity=warning` on every `*.sh` file and `hadolint` on the `Dockerfile`.
+- Lint with `gofmt`, `go vet`, `shellcheck --severity=warning` on the shell test files and `hadolint` on the `Dockerfile`.
 - No explanatory comments in code; put the reasoning in the commit message.
 - This repository is public and generic. Do not add names, hosts, paths or anything else belonging to one deployment. `tests/cases/90_public_hygiene.sh` checks for common leaks (home paths, e-mail addresses, private network addresses). To forbid names specific to your own deployment, put a regular expression in the `DBB_HYGIENE_EXTRA` environment variable when you run the tests, and keep that list outside the repository.
 
