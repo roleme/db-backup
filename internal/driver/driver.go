@@ -24,8 +24,10 @@ type TableCounter interface {
 func ForConfig(cfg *config.Config, run proc.Runner) ([]Adapter, error) {
 	var main Adapter
 	switch cfg.Driver {
-	case "postgres", "mysql":
-		return nil, fmt.Errorf("DRIVER %s is not implemented yet", cfg.Driver)
+	case "postgres":
+		main = newPostgres(cfg, run)
+	case "mysql":
+		main = newMySQL(cfg, run)
 	case "sqlite":
 		main = newSQLite(cfg, run)
 	default:
