@@ -23,7 +23,7 @@ sqlite_exclude_rows() {
   sqlite3 "$1" "VACUUM"
 }
 
-driver_validate() {
+sqlite_validate() {
   require_env SQLITE_PATHS
   local path name
   SQLITE_FILES=()
@@ -37,15 +37,15 @@ driver_validate() {
   [ "${#SQLITE_FILES[@]}" -gt 0 ] || die "SQLITE_PATHS lists no files"
 }
 
-driver_targets() {
+sqlite_units() {
   printf '%s\n' "${!SQLITE_FILES[@]}"
 }
 
-driver_suffix() {
+sqlite_suffix() {
   printf '%s' '.db.gz'
 }
 
-driver_dump() {
+sqlite_dump() {
   local dir copy rc
   dir=$(mktemp -d "$BACKUP_DIR/.sqlite.$1.XXXXXX") || return 1
   copy="$dir/db"
@@ -59,7 +59,7 @@ driver_dump() {
   return "$rc"
 }
 
-driver_expected_tables() {
+sqlite_tables() {
   local copy count
   copy=$(mktemp "$BACKUP_DIR/.sqlite.$1.XXXXXX") || return 1
   if gunzip -c "$2" > "$copy" && count=$(sqlite_count "$copy"); then
@@ -71,7 +71,7 @@ driver_expected_tables() {
   return 1
 }
 
-driver_verify() {
+sqlite_verify() {
   local copy res count fk=""
   copy=$(mktemp "$BACKUP_DIR/.sqlite.$1.XXXXXX") || return 1
   if ! gunzip -c "$2" > "$copy"; then

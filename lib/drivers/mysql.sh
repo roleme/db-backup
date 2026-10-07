@@ -2,7 +2,7 @@
 
 MYSQL_ARGS=()
 
-driver_validate() {
+mysql_validate() {
   require_env DB_HOST DB_USER DATABASES
   local password
   password=$(secret DB_PASSWORD)
@@ -36,15 +36,15 @@ SQL
   printf '%s\n' "$total"
 }
 
-driver_targets() {
+mysql_units() {
   split_list "$DATABASES"
 }
 
-driver_suffix() {
+mysql_suffix() {
   printf '%s' '.sql.gz'
 }
 
-driver_dump() {
+mysql_dump() {
   local opts=() table
   read -ra opts <<< "$EXTRA_OPTS"
   while IFS= read -r table; do
@@ -56,11 +56,11 @@ driver_dump() {
   mariadb-dump "${MYSQL_ARGS[@]}" --single-transaction --no-tablespaces --routines --triggers ${opts[@]+"${opts[@]}"} "$1" | gzip "-${GZIP_LEVEL}" > "$2"
 }
 
-driver_expected_tables() {
+mysql_tables() {
   gunzip -c "$2" | awk '/^CREATE TABLE /{n++} END{print n+0}'
 }
 
-driver_verify() {
+mysql_verify() {
   local target=$1 dump=$2 expected=$3 scratch="dbb_verify_$1" got="" orphans=0 rc=0
   mariadb "${MYSQL_ARGS[@]}" -e "DROP DATABASE IF EXISTS \`$scratch\`" || return 1
   mariadb "${MYSQL_ARGS[@]}" -e "CREATE DATABASE \`$scratch\`" || return 1
