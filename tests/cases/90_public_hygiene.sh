@@ -8,7 +8,7 @@ test_no_private_strings() {
     pattern="$pattern|$DBB_HYGIENE_EXTRA"
   fi
   hits=$(grep -rnEi "$pattern" "$HERE/.." \
-    --exclude-dir=.git --exclude-dir=.superpowers --exclude=90_public_hygiene.sh --exclude=LICENSE.upstream || true)
+    --exclude-dir=.git --exclude=.git --exclude-dir=.superpowers --exclude=90_public_hygiene.sh --exclude=LICENSE.upstream || true)
   assert_eq "$hits" "" "the repository must not mention private infrastructure"
   pass "no private strings"
 }
