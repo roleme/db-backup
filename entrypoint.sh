@@ -12,6 +12,7 @@ if compgen -G "$TARGETS_DIR/*.env" > /dev/null; then
   . "$LIB/targets.sh"
   declare -A owner=()
   : > "$crontab"
+  names=$(list_targets)
   while IFS= read -r name; do
     db-backup-run "$name" check
     while IFS= read -r dump; do
@@ -23,11 +24,11 @@ if compgen -G "$TARGETS_DIR/*.env" > /dev/null; then
     if [ -n "${TARGET_VARS[VERIFY_SCHEDULE]:-}" ]; then
       printf '%s db-backup-run %s verify\n' "${TARGET_VARS[VERIFY_SCHEDULE]}" "$name" >> "$crontab"
     fi
-  done < <(list_targets)
+  done <<< "$names"
   if [ "${BACKUP_ON_START:-FALSE}" = TRUE ]; then
     while IFS= read -r name; do
       db-backup-run "$name" backup || true
-    done < <(list_targets)
+    done <<< "$names"
   fi
 else
   db-backup check

@@ -209,3 +209,39 @@ test_sqlite_exclude_unknown_table() {
   assert_eq "$(in_vol "$bk" 'ls -A /backups')" "" "nothing left behind"
   pass "sqlite exclude unknown table"
 }
+
+test_sqlite_exclude_does_not_fire_triggers() {
+  local data bk out
+  data=$(new_volume trg_data)
+  bk=$(new_volume trg_bk)
+  docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/trg.db "create table runs (id integer primary key, n integer); create table stats (n integer); create table users (id integer primary key); insert into runs values (1, 5); insert into stats values (42); insert into users values (1); create trigger runs_cleanup after delete on runs begin update stats set n = n - 1; delete from users; end;"'
+  local -a env=(-v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/trg.db -e EXCLUDE_TABLE_DATA=runs)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
+  out=$(in_vol "$bk" 'cd /backups/last
+gunzip -c trg-latest.db.gz > /tmp/x.db
+echo "runs:$(sqlite3 /tmp/x.db "select count(*) from runs")"
+echo "users:$(sqlite3 /tmp/x.db "select count(*) from users")"
+echo "stats:$(sqlite3 /tmp/x.db "select n from stats")"
+echo "triggers:$(sqlite3 /tmp/x.db .schema | grep -c runs_cleanup)"')
+  assert_contains "$out" "runs:0" "the excluded rows are gone"
+  assert_contains "$out" "users:1" "another table is not emptied by a trigger"
+  assert_contains "$out" "stats:42" "another table is not altered by a trigger"
+  assert_contains "$out" "triggers:1" "the trigger itself is kept in the dump"
+  dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify failed"
+  pass "sqlite exclude does not fire triggers"
+}
+
+test_prune_leaves_numeric_prefix_names() {
+  local data bk out
+  data=$(new_volume numpfx_data)
+  bk=$(new_volume numpfx_bk)
+  sqlite_data "$data"
+  in_vol "$bk" 'cd /backups; mkdir -p last daily weekly monthly
+touch -d 2020-01-01 daily/app-2-20200101.db.gz weekly/app-2-202001.db.gz monthly/app-2-202001.db.gz last/app-2-20200101-010000.db.gz last/app-2-20200101-010000.db.gz.tables'
+  dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -- backup > /dev/null
+  out=$(in_vol "$bk" 'cd /backups; ls last daily weekly monthly')
+  assert_contains "$out" "app-2-20200101.db.gz" "another target's old daily is kept"
+  assert_contains "$out" "app-2-202001.db.gz" "another target's old weekly and monthly are kept"
+  assert_contains "$out" "app-2-20200101-010000.db.gz.tables" "another target's table-count file is kept"
+  pass "prune leaves numeric prefix names"
+}

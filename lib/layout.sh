@@ -28,10 +28,12 @@ store_dump() {
 }
 
 prune() {
-  local db=$1 suffix=$2 pattern
-  pattern="${db}-[0-9]*${suffix}"
-  find "$BACKUP_DIR/last" -maxdepth 1 -mmin "+${KEEP_MINS}" \( -name "$pattern" -o -name "$pattern.tables" \) -exec rm -f {} +
-  find "$BACKUP_DIR/daily" -maxdepth 1 -mtime "+${KEEP_DAYS}" -name "$pattern" -exec rm -f {} +
-  find "$BACKUP_DIR/weekly" -maxdepth 1 -mtime "+$((KEEP_WEEKS * 7 + 1))" -name "$pattern" -exec rm -f {} +
-  find "$BACKUP_DIR/monthly" -maxdepth 1 -mtime "+$((KEEP_MONTHS * 31 + 1))" -name "$pattern" -exec rm -f {} +
+  local db=$1 suffix=$2 d8 d6 t6
+  d8='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+  d6='[0-9][0-9][0-9][0-9][0-9][0-9]'
+  t6=$d6
+  find "$BACKUP_DIR/last" -maxdepth 1 -mmin "+${KEEP_MINS}" \( -name "${db}-${d8}-${t6}${suffix}" -o -name "${db}-${d8}-${t6}${suffix}.tables" \) -exec rm -f {} +
+  find "$BACKUP_DIR/daily" -maxdepth 1 -mtime "+${KEEP_DAYS}" -name "${db}-${d8}${suffix}" -exec rm -f {} +
+  find "$BACKUP_DIR/weekly" -maxdepth 1 -mtime "+$((KEEP_WEEKS * 7 + 1))" -name "${db}-${d6}${suffix}" -exec rm -f {} +
+  find "$BACKUP_DIR/monthly" -maxdepth 1 -mtime "+$((KEEP_MONTHS * 31 + 1))" -name "${db}-${d6}${suffix}" -exec rm -f {} +
 }

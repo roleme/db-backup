@@ -213,3 +213,34 @@ TARGET
   docker rm -fv "$name" > /dev/null
   pass "central backup on start"
 }
+
+test_central_bad_target_file_name_stops_start() {
+  local data bk name rc
+  data=$(new_volume badname_data)
+  bk=$(new_volume badname_bk)
+  name=dbbtest_badname_$$
+  docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/a.db "create table t (x)"; sqlite3 /data/z.db "create table t (x)"'
+  reset_targets
+  write_target a <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/a.db
+TARGET
+  write_target my.app <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/a.db
+TARGET
+  write_target z <<'TARGET'
+DRIVER=sqlite
+SQLITE_PATHS=/data/z.db
+TARGET
+  docker run -d --name "$name" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  if ! wait_for 20 "[ \"\$(docker inspect -f '{{.State.Running}}' $name)\" = false ]"; then
+    docker rm -fv "$name" > /dev/null
+    fail "a badly named target file did not stop the container; later targets were silently dropped"
+  fi
+  rc=$(docker inspect -f '{{.State.ExitCode}}' "$name")
+  assert_contains "$(docker logs "$name" 2>&1)" "invalid target name 'my.app'" "the error names the file"
+  docker rm -fv "$name" > /dev/null
+  assert_eq "$rc" 1 "start refused with a failure status"
+  pass "central bad target file name stops start"
+}

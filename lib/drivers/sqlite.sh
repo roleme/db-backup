@@ -12,12 +12,15 @@ sqlite_ident() {
 }
 
 sqlite_exclude_rows() {
-  local table sql=""
+  local table deletes="" drops recreates
   [ -n "${EXCLUDE_TABLE_DATA:-}" ] || return 0
+  drops=$(sqlite3 "$1" "select 'DROP TRIGGER \"' || replace(name, '\"', '\"\"') || '\";' from sqlite_master where type = 'trigger'") || return 1
+  recreates=$(sqlite3 "$1" "select sql || ';' from sqlite_master where type = 'trigger' and sql is not null") || return 1
   while IFS= read -r table; do
-    sql+="DELETE FROM $(sqlite_ident "$table"); "
+    deletes+="DELETE FROM $(sqlite_ident "$table"); "
   done < <(split_list "$EXCLUDE_TABLE_DATA")
-  sqlite3 "$1" "${sql}VACUUM"
+  sqlite3 "$1" "BEGIN; $drops $deletes $recreates COMMIT;" || return 1
+  sqlite3 "$1" "VACUUM"
 }
 
 driver_validate() {
