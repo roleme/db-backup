@@ -100,7 +100,7 @@ func LoadTarget(dir, name string) (*Target, error) {
 			break
 		}
 	}
-	for key := range t.Vars {
+	for _, key := range sortedKeys(t.Vars) {
 		if base, ok := strings.CutSuffix(key, "_ENV"); ok {
 			if _, both := t.Vars[base]; both {
 				return nil, fmt.Errorf("target %s: set only one of %s and %s", name, base, key)
@@ -131,7 +131,8 @@ func LoadTarget(dir, name string) (*Target, error) {
 
 func (t *Target) Resolve(getenv func(string) string) (map[string]string, error) {
 	out := make(map[string]string, len(t.Vars))
-	for key, value := range t.Vars {
+	for _, key := range sortedKeys(t.Vars) {
+		value := t.Vars[key]
 		switch {
 		case key == "TIMEOUT":
 		case strings.HasSuffix(key, "_ENV"):
@@ -184,4 +185,13 @@ func FailPingURL(dir, name string, getenv func(string) string) string {
 		return getenv(ref)
 	}
 	return ""
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
