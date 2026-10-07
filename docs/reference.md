@@ -71,7 +71,7 @@ Target files are parsed, not executed. Blank lines and lines starting with `#` a
 
 Dump names are shared by all targets in `/backups`, so they must be unique across targets. The container refuses to start when two targets would write the same dump name.
 
-The crontab and the duplicate-name check are built when the container starts, so restart the container after adding a target or changing a schedule. Other keys are read again on every run, without validation: a typo introduced into a running target makes its runs fail without a ping, so restart after any edit and watch the start-up output. `BACKUP_ON_START=TRUE` runs every target once at start. A target file that fails validation stops the container at start. Every target defaults to `@daily` and the runs start together at midnight, so give targets their own `SCHEDULE` to stagger them.
+Target files are read once, when the container starts: it validates every target, builds the crontab and keeps its own copy of each file, so editing a file in a running container changes nothing until the container is restarted. A target that fails validation (unknown key, a key set both directly and as `*_ENV`, an invalid name or schedule, a schedule the scheduler rejects, an unset environment variable) is skipped: the reason is logged, its ping URL receives `/fail` when it can be read, and the container reports itself unhealthy while the other targets keep running. Two targets that would write the same dump name stop the container, and so does having no valid target at all. `BACKUP_ON_START=TRUE` runs every target once at start. Every target defaults to `@daily` and the runs start together at midnight, so give targets their own `SCHEDULE` to stagger them. Schedules are cron expressions of 5 to 7 fields, or an `@` shortcut.
 
 ## Reaching the databases
 
@@ -82,7 +82,7 @@ The container must be able to open a connection to each database server. In Dock
 Give the backup its own user per database.
 
 - **PostgreSQL:** `CREATE ROLE backup LOGIN PASSWORD '...' CREATEDB IN ROLE pg_read_all_data;`. `CREATEDB` is for the scratch database that verification restores into, and the role needs `CONNECT` on the `postgres` database. `pg_read_all_data` does not cover large objects: a database that uses them fails the dump with `permission denied for large object`. Dumps are written with `--no-owner --no-privileges`, so they restore under any role; ownership becomes the restoring user's. Only trusted extensions can be restored by a non-superuser (for example `pgcrypto` and `uuid-ossp` are, `pg_stat_statements` is not): check `\dx` on the server before relying on verification.
-- **MySQL:** grant the three statements below. Without `TRIGGER` or `SHOW_ROUTINE` the dump silently leaves triggers and routines out, and nothing detects that, because a user without those privileges cannot see them either. With the binary log on (the MySQL 8.4 default), restoring triggers and functions also needs `log_bin_trust_function_creators=1` on the server; verification strips `DEFINER` clauses, and each verification restore is written to the binary log. Excluding the rows of a parent table can leave orphaned child rows that verification does not detect.
+- **MySQL:** grant the three statements below. Without `TRIGGER` or `SHOW_ROUTINE` the dump silently leaves triggers and routines out, and nothing detects that, because a user without those privileges cannot see them either. With the binary log on (the MySQL 8.4 default), restoring triggers and functions also needs `log_bin_trust_function_creators=1` on the server; verification strips `DEFINER` clauses, and each verification restore is written to the binary log. After rows were excluded, verification also checks the scratch database for child rows whose parent rows are gone.
 
   ```sql
   GRANT SELECT, SHOW VIEW, TRIGGER ON db.* TO 'backup'@'%';
@@ -93,7 +93,7 @@ Give the backup its own user per database.
 
 ## Excluding table rows
 
-`EXCLUDE_TABLE_DATA=table1,table2` keeps each table's schema and skips its rows, for tables such as execution logs or history. A restore brings those tables back empty. PostgreSQL uses `--exclude-table-data`; MySQL uses `--ignore-table-data=<db>.<table>`; for SQLite the rows are deleted in the dump copy and verification then runs `PRAGMA foreign_key_check`, because deleting rows can orphan others.
+`EXCLUDE_TABLE_DATA=table1,table2` keeps each table's schema and skips its rows, for tables such as execution logs or history. A restore brings those tables back empty. PostgreSQL uses `--exclude-table-data`; MySQL uses `--ignore-table-data=<db>.<table>`; for SQLite the rows are deleted in the dump copy with the table's triggers suspended, so no other table is altered. For SQLite and MySQL, verification then fails if the exclusion left child rows whose parent rows are gone.
 
 ## Output
 
@@ -125,7 +125,32 @@ tar -xzf data-latest.tar.gz                           # extra paths
 
 ## Limits
 
-A run is killed after `TIMEOUT` seconds and pings `/fail`. In central mode, runs of the same target (backup and verify) are serialised with a lock and different targets run concurrently. A restart interrupts any dump in progress; the next run cleans up its leftovers.
+A run is killed after `TIMEOUT` seconds and pings `/fail`. In central mode, runs of the same target (backup and verify) are serialised with a lock and different targets run concurrently. A restart interrupts any dump in progress; the next run of that target removes its own temporary files older than an hour.
+
+## Security
+
+- **It runs as root by default.** It has to read other applications' data files, and the dumps it writes are readable only by root (mode 0600). If every database file belongs to one user, run it as that user (`user: "1000:1000"`) and give that user write access to the backup directory and, for SQLite, to the data directories (a WAL database needs `-wal` and `-shm` files created next to it).
+- **Hardening that works** (tested with a SQLite target: backup and verify both pass): a read-only root file system, a temporary `/tmp`, no new privileges, and only the file-access capabilities.
+
+  ```yaml
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - DAC_OVERRIDE
+    - DAC_READ_SEARCH
+    - FOWNER
+    - CHOWN
+  ```
+
+- **No ports are opened.** The container only makes outbound connections: to the databases, and to the ping URLs.
+- **Secrets.** Passwords are given as the name of an environment variable (or a file), never inside a target file, and each target runs in a clean environment holding only its own values. A target file can still name any variable of the container, so treat the targets directory as trusted configuration. The dumps contain your data; protect the backup directory accordingly.
+- **MySQL connections do not verify the server certificate**, because MySQL's default certificate is self-signed and carries no host name. Keep database traffic on a private network.
+- **The image** is scanned with Trivy in CI, which fails on any HIGH or CRITICAL vulnerability that has a fix, and it is rebuilt from scratch every week so that fixed packages arrive. Operating-system vulnerabilities that Debian has not fixed yet are not mitigated here.
 
 ## Image
 

@@ -42,7 +42,7 @@ With no target files the container runs a single database configured from plain 
 
 ## More
 
-[docs/reference.md](docs/reference.md) has every key, the database privileges to grant, how to reach the databases, excluding table rows, the output layout, verification and restoring.
+[docs/reference.md](docs/reference.md) has every key, the database privileges to grant, how to reach the databases, excluding table rows, the output layout, verification, restoring, and the security notes (it runs as root by default; a hardening recipe is there).
 
 ## Working on this repository
 
