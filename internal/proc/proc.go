@@ -26,9 +26,11 @@ type Runner interface {
 	Run(ctx context.Context, s Spec) error
 }
 
-type Exec struct{}
+type Exec struct {
+	NewGroup bool
+}
 
-func (Exec) Run(ctx context.Context, s Spec) error {
+func (e Exec) Run(ctx context.Context, s Spec) error {
 	cmd := exec.CommandContext(ctx, s.Name, s.Args...)
 	cmd.Env = s.Env
 	if cmd.Env == nil {
@@ -40,14 +42,16 @@ func (Exec) Run(ctx context.Context, s Spec) error {
 	if cmd.Stderr == nil {
 		cmd.Stderr = os.Stderr
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		pid := cmd.Process.Pid
-		_ = syscall.Kill(-pid, syscall.SIGTERM)
-		time.AfterFunc(KillAfter, func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
-		return nil
-	}
 	cmd.WaitDelay = KillAfter + 5*time.Second
+	if e.NewGroup {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error {
+			pid := cmd.Process.Pid
+			_ = syscall.Kill(-pid, syscall.SIGTERM)
+			time.AfterFunc(KillAfter, func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
+			return nil
+		}
+	}
 	return cmd.Run()
 }
 

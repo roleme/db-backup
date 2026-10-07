@@ -99,7 +99,8 @@ func (p Policy) cutoff(t Tier, now time.Time) time.Time {
 	case Daily:
 		return day.AddDate(0, 0, -p.KeepDays)
 	case Weekly:
-		return day.AddDate(0, 0, -p.KeepWeeks*7)
+		year, week := now.ISOWeek()
+		return isoWeekStart(year, week, now.Location()).AddDate(0, 0, -p.KeepWeeks*7)
 	default:
 		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		return first.AddDate(0, -p.KeepMonths, 0)

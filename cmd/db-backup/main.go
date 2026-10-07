@@ -108,7 +108,7 @@ func runnerRole(ctx context.Context, args []string) int {
 		TargetsDir: getenvDefault("TARGETS_DIR", defaultTargetsDir),
 		LockDir:    getenvDefault("DBB_LOCK_DIR", defaultLockDir),
 		Getenv:     os.Getenv,
-		Exec:       proc.Exec{},
+		Exec:       proc.Exec{NewGroup: true},
 		Ping:       ping.NewHTTP(),
 	}
 	return r.Run(ctx, args[0], args[1])

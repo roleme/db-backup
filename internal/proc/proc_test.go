@@ -49,7 +49,7 @@ func TestTimeoutKillsTheWholeGroup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	err := Exec{}.Run(ctx, Spec{Name: "sh", Args: []string{"-c", script}, Env: []string{"PATH=" + os.Getenv("PATH")}})
+	err := Exec{NewGroup: true}.Run(ctx, Spec{Name: "sh", Args: []string{"-c", script}, Env: []string{"PATH=" + os.Getenv("PATH")}})
 	if err == nil {
 		t.Fatal("expected an error after the timeout")
 	}
@@ -86,4 +86,39 @@ func TestOutputAndFake(t *testing.T) {
 	if len(f.Calls) != 1 || f.Calls[0].Spec.Name != "psql" {
 		t.Errorf("calls = %+v", f.Calls)
 	}
+}
+
+func TestTimeoutKillsDumpToolsStartedByTheChild(t *testing.T) {
+	if os.Getenv("DBB_NESTED_HELPER") == "1" {
+		_ = Exec{}.Run(context.Background(), Spec{Name: "sh", Args: []string{"-c", "echo $$ > " + os.Getenv("DBB_MARKER") + "; exec sleep 30"}, Env: []string{"PATH=" + os.Getenv("PATH")}})
+		return
+	}
+	marker := t.TempDir() + "/pid"
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := Exec{NewGroup: true}.Run(ctx, Spec{
+		Name: os.Args[0],
+		Args: []string{"-test.run=TestTimeoutKillsDumpToolsStartedByTheChild"},
+		Env:  []string{"DBB_NESTED_HELPER=1", "DBB_MARKER=" + marker, "PATH=" + os.Getenv("PATH")},
+	})
+	if err == nil {
+		t.Fatal("expected an error after the timeout")
+	}
+	b, rerr := os.ReadFile(marker)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	pid, perr := strconv.Atoi(strings.TrimSpace(string(b)))
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if syscall.Kill(pid, 0) != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	t.Errorf("tool %d started by the child survived the group kill", pid)
 }
