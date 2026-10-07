@@ -25,8 +25,14 @@ driver_suffix() {
 }
 
 driver_dump() {
-  local opts=()
+  local opts=() table
   read -ra opts <<< "$EXTRA_OPTS"
+  while IFS= read -r table; do
+    case "$table" in
+      *.*) opts+=("--ignore-table-data=$table") ;;
+      *) opts+=("--ignore-table-data=$1.$table") ;;
+    esac
+  done < <(split_list "$EXCLUDE_TABLE_DATA")
   mariadb-dump "${MYSQL_ARGS[@]}" --single-transaction --no-tablespaces --routines --triggers ${opts[@]+"${opts[@]}"} "$1" | gzip "-${GZIP_LEVEL}" > "$2"
 }
 

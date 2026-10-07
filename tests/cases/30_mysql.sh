@@ -86,3 +86,20 @@ echo "triggers:$(gunzip -c shop-latest.sql.gz | grep -c "TRIGGER .tags_default")
   assert_not_contains "$out" "triggers:0" "the trigger is in the dump"
   pass "mysql dump has routines and triggers"
 }
+
+
+test_mysql_exclude_table_data() {
+  local bk out
+  bk=$(new_volume myexcl_bk)
+  local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=bkp -e DB_PASSWORD=bkppw -e DATABASES=shop -e EXCLUDE_TABLE_DATA=posts)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
+  out=$(in_vol "$bk" 'cd /backups/last
+echo "schema:$(gunzip -c shop-latest.sql.gz | grep -c "CREATE TABLE .posts.")"
+echo "rows:$(gunzip -c shop-latest.sql.gz | grep -c "INSERT INTO .posts.")"
+echo "tables:$(cat shop-[0-9]*.sql.gz.tables)"')
+  assert_contains "$out" "schema:1" "the schema of the excluded table is kept"
+  assert_contains "$out" "rows:0" "rows of the excluded table are gone"
+  assert_contains "$out" "tables:2" "both tables are counted"
+  dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify after excluding rows failed"
+  pass "mysql exclude table data"
+}
