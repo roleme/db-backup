@@ -88,3 +88,23 @@ test_extra_paths_duplicate() {
   assert_eq "$(in_vol "$bk" 'ls -A /backups')" "" "nothing written when the config is invalid"
   pass "extra paths duplicate"
 }
+
+test_sqlite_named_paths_tell_same_file_names_apart() {
+  local data bk out
+  data=$(new_volume named_data)
+  bk=$(new_volume named_bk)
+  docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'mkdir -p /data/one /data/two && sqlite3 /data/one/db.db "create table a (x)" && sqlite3 /data/two/db.db "create table b (x); create table c (x)"'
+  local -a env=(-v "$data:/data" -e DRIVER=sqlite)
+  dbb "$bk" "${env[@]}" -e SQLITE_PATHS=one=/data/one/db.db,two=/data/two/db.db -- backup > /dev/null || fail "backup with named paths failed"
+  out=$(in_vol "$bk" 'ls /backups/last; echo "one:$(cat /backups/last/one-[0-9]*.db.gz.tables)"; echo "two:$(cat /backups/last/two-[0-9]*.db.gz.tables)"')
+  assert_contains "$out" "one-latest.db.gz" "first named dump"
+  assert_contains "$out" "two-latest.db.gz" "second named dump"
+  assert_contains "$out" "one:1" "first table count"
+  assert_contains "$out" "two:2" "second table count"
+  dbb "$bk" "${env[@]}" -e SQLITE_PATHS=one=/data/one/db.db,two=/data/two/db.db -- verify > /dev/null || fail "verify with named paths failed"
+  if out=$(dbb "$bk" "${env[@]}" -e SQLITE_PATHS=/data/one/db.db,/data/two/db.db -- backup 2>&1); then
+    fail "two files with the same name were accepted without names"
+  fi
+  assert_contains "$out" "two files named db" "unnamed collision message"
+  pass "sqlite named paths tell same file names apart"
+}

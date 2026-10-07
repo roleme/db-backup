@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,8 @@ import (
 )
 
 const sqliteBusyTimeoutMs = "30000"
+
+var unitNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 type sqlite struct {
 	cfg   *config.Config
@@ -36,11 +39,17 @@ func (s *sqlite) Validate() error {
 	}
 	s.files = map[string]string{}
 	s.order = nil
-	for _, path := range config.SplitList(s.cfg.Get("SQLITE_PATHS")) {
+	for _, entry := range config.SplitList(s.cfg.Get("SQLITE_PATHS")) {
+		name, path, err := sqliteEntry(entry)
+		if err != nil {
+			return err
+		}
 		if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
 			return fmt.Errorf("SQLITE_PATHS entry %s does not exist", path)
 		}
-		name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if name == "" {
+			name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		}
 		if _, dup := s.files[name]; dup {
 			return fmt.Errorf("SQLITE_PATHS has two files named %s", name)
 		}
@@ -51,6 +60,18 @@ func (s *sqlite) Validate() error {
 		return errors.New("SQLITE_PATHS lists no files")
 	}
 	return nil
+}
+
+func sqliteEntry(entry string) (name, path string, err error) {
+	idx := strings.Index(entry, "=")
+	if idx < 0 || strings.Contains(entry[:idx], "/") {
+		return "", entry, nil
+	}
+	name = strings.TrimSpace(entry[:idx])
+	if !unitNameRe.MatchString(name) {
+		return "", "", fmt.Errorf("SQLITE_PATHS entry %q has an invalid name", entry)
+	}
+	return name, strings.TrimSpace(entry[idx+1:]), nil
 }
 
 func (s *sqlite) Units() []string {

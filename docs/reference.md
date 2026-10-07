@@ -61,7 +61,7 @@ Target files are parsed, not executed. Blank lines and lines starting with `#` a
 | `DB_SSL_CA` | postgres and mysql: a PEM file with the CA that signed the server certificate; the connection then requires TLS and verifies the certificate chain and the host name (`sslmode=verify-full` for PostgreSQL, `--ssl-verify-server-cert` for MySQL) |
 | `DB_SSL_FINGERPRINT` | mysql only: pin the server certificate by its SHA-256 (or SHA-1) fingerprint, for a server whose certificate carries no matching host name, such as MySQL's auto-generated one; get it with `openssl x509 -in server-cert.pem -noout -fingerprint -sha256`. Set at most one of the two |
 | `DATABASES` | comma-separated database names (postgres, mysql) |
-| `SQLITE_PATHS` | comma-separated database files; the file name without its extension names the dump |
+| `SQLITE_PATHS` | comma-separated database files; the file name without its extension names the dump, or write `name=path` to choose the name (needed when two files share a name, such as two `db.sqlite3`); a name is letters, digits, `_` and `-` |
 | `EXTRA_PATHS` | comma-separated directories archived as `<name>-<stamp>.tar.gz` beside the dumps |
 | `EXTRA_OPTS` | extra flags for `pg_dump` / `mariadb-dump`; compression is `GZIP_LEVEL`, so no `-Z` |
 | `EXCLUDE_TABLE_DATA` | comma-separated tables whose rows are skipped; their schema is kept |

@@ -64,3 +64,56 @@ func TestSQLiteExcludeRowsBuildsAnInjectionSafeScript(t *testing.T) {
 		t.Errorf("script = %s", all)
 	}
 }
+
+func TestSQLiteNamedPaths(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(rel string) string {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a, b, eq := mk("a/db.db"), mk("b/db.sqlite3"), mk("c/x=y.db")
+
+	s := newSQLite(testConfig(t, "SQLITE_PATHS", "alpha="+a+", beta = "+b), &proc.Fake{})
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(s.Units(), ","); got != "alpha,beta" {
+		t.Errorf("units = %q", got)
+	}
+	if s.files["alpha"] != a || s.files["beta"] != b {
+		t.Errorf("files = %v", s.files)
+	}
+
+	plain := newSQLite(testConfig(t, "SQLITE_PATHS", eq), &proc.Fake{})
+	if err := plain.Validate(); err != nil {
+		t.Fatalf("a path that contains '=' but no name must still work: %v", err)
+	}
+	if got := strings.Join(plain.Units(), ","); got != "x=y" {
+		t.Errorf("units = %q", got)
+	}
+
+	cases := []struct{ paths, want string }{
+		{"a b=" + a, `SQLITE_PATHS entry "a b=` + a + `" has an invalid name`},
+		{"=" + a, `SQLITE_PATHS entry "=` + a + `" has an invalid name`},
+		{"one=" + a + ",one=" + b, "SQLITE_PATHS has two files named one"},
+		{"db=" + a + "," + b, "SQLITE_PATHS has two files named db"},
+	}
+	for _, c := range cases {
+		err := newSQLite(testConfig(t, "SQLITE_PATHS", c.paths), &proc.Fake{}).Validate()
+		if c.want == "" {
+			if err != nil {
+				t.Errorf("%q: unexpected error %v", c.paths, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%q: error = %v, want %q", c.paths, err, c.want)
+		}
+	}
+}
