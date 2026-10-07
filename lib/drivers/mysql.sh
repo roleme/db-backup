@@ -19,10 +19,10 @@ mysql_table_count() {
 mysql_orphans() {
   local queries query n total=0
   queries=$(mariadb "${MYSQL_ARGS[@]}" -N -s "$1" << 'SQL'
-select concat('select count(*) from `', k.TABLE_NAME, '` c left join `', k.REFERENCED_TABLE_NAME, '` p on ',
-  group_concat(concat('c.`', k.COLUMN_NAME, '` = p.`', k.REFERENCED_COLUMN_NAME, '`') separator ' and '),
-  ' where p.`', min(k.REFERENCED_COLUMN_NAME), '` is null and ',
-  group_concat(concat('c.`', k.COLUMN_NAME, '` is not null') separator ' and '))
+select concat('select count(*) from `', replace(k.TABLE_NAME, '`', '``'), '` c left join `', replace(k.REFERENCED_TABLE_NAME, '`', '``'), '` p on ',
+  group_concat(concat('c.`', replace(k.COLUMN_NAME, '`', '``'), '` = p.`', replace(k.REFERENCED_COLUMN_NAME, '`', '``'), '`') separator ' and '),
+  ' where p.`', replace(min(k.REFERENCED_COLUMN_NAME), '`', '``'), '` is null and ',
+  group_concat(concat('c.`', replace(k.COLUMN_NAME, '`', '``'), '` is not null') separator ' and '))
 from information_schema.KEY_COLUMN_USAGE k
 where k.TABLE_SCHEMA = database() and k.REFERENCED_TABLE_SCHEMA = database() and k.REFERENCED_TABLE_NAME is not null
 group by k.CONSTRAINT_NAME, k.TABLE_NAME, k.REFERENCED_TABLE_NAME

@@ -115,3 +115,15 @@ test_mysql_exclude_leaving_orphans_is_caught() {
   assert_contains "$out" "orphaned" "verify names the reason"
   pass "mysql exclude leaving orphans is caught"
 }
+
+test_mysql_orphan_check_handles_quoted_names() {
+  local bk out
+  bk=$(new_volume myq_bk)
+  local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=bkp -e DB_PASSWORD=bkppw -e DATABASES=fkq -e 'EXCLUDE_TABLE_DATA=pa`rent')
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup failed"
+  if out=$(dbb "$bk" "${env[@]}" -- verify 2>&1); then
+    fail "verify accepted orphaned child rows"
+  fi
+  assert_contains "$out" "orphaned" "a table name containing a backtick is checked, not a syntax error"
+  pass "mysql orphan check handles quoted names"
+}

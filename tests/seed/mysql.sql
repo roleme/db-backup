@@ -13,3 +13,9 @@ CREATE TABLE fkshop.child (id INT PRIMARY KEY, pid INT, CONSTRAINT child_parent 
 INSERT INTO fkshop.parent VALUES (1);
 INSERT INTO fkshop.child VALUES (1, 1);
 GRANT SELECT, SHOW VIEW, TRIGGER ON fkshop.* TO 'bkp'@'%';
+CREATE DATABASE fkq;
+CREATE TABLE fkq.`pa``rent` (id INT PRIMARY KEY) ENGINE=InnoDB;
+CREATE TABLE fkq.child (id INT PRIMARY KEY, pid INT, CONSTRAINT cq FOREIGN KEY (pid) REFERENCES fkq.`pa``rent` (id)) ENGINE=InnoDB;
+INSERT INTO fkq.`pa``rent` VALUES (1);
+INSERT INTO fkq.child VALUES (1, 1);
+GRANT SELECT, SHOW VIEW, TRIGGER ON fkq.* TO 'bkp'@'%';
