@@ -56,7 +56,19 @@ func (m *mysql) Validate() error {
 		port = "3306"
 	}
 	m.env = append(proc.BaseEnv(), "MYSQL_PWD="+password)
-	m.args = []string{"-h", m.cfg.Get("DB_HOST"), "-P", port, "-u", m.cfg.Get("DB_USER"), "--skip-ssl-verify-server-cert"}
+	ca, fingerprint, err := tlsKeys(m.cfg)
+	if err != nil {
+		return err
+	}
+	m.args = []string{"-h", m.cfg.Get("DB_HOST"), "-P", port, "-u", m.cfg.Get("DB_USER")}
+	switch {
+	case ca != "":
+		m.args = append(m.args, "--ssl-ca="+ca, "--ssl-verify-server-cert")
+	case fingerprint != "":
+		m.args = append(m.args, "--ssl-fp="+fingerprint)
+	default:
+		m.args = append(m.args, "--skip-ssl-verify-server-cert")
+	}
 	m.dbs = config.SplitList(m.cfg.Get("DATABASES"))
 	if len(m.dbs) == 0 {
 		return errors.New("DATABASES lists no databases")

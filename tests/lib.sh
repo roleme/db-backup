@@ -24,7 +24,7 @@ cleanup() {
   docker ps -aq --filter "name=dbbtest_" | xargs docker rm -f > /dev/null 2>&1 || true
   docker volume ls -q --filter "name=dbbtest_" | xargs docker volume rm -f > /dev/null 2>&1 || true
   rm -f "${TMPDIR:-/tmp}/dbbtest_pw_$$"
-  rm -rf "${TMPDIR:-/tmp}/dbbtest_targets_$$" "${TMPDIR:-/tmp}/dbbtest_stub_$$"
+  rm -rf "${TMPDIR:-/tmp}/dbbtest_targets_$$" "${TMPDIR:-/tmp}/dbbtest_stub_$$" "${TMPDIR:-/tmp}/dbbtest_tls_$$"
 }
 
 fail() {

@@ -31,6 +31,9 @@ func (s *sqlite) Validate() error {
 	if err := s.cfg.Require("SQLITE_PATHS"); err != nil {
 		return err
 	}
+	if err := rejectTLSKeys(s.cfg, "sqlite"); err != nil {
+		return err
+	}
 	s.files = map[string]string{}
 	s.order = nil
 	for _, path := range config.SplitList(s.cfg.Get("SQLITE_PATHS")) {

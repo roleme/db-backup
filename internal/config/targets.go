@@ -28,7 +28,7 @@ var targetKeys = map[string]bool{
 	"HC_PING_URL": true, "HC_PING_URL_ENV": true,
 	"HC_VERIFY_PING_URL": true, "HC_VERIFY_PING_URL_ENV": true,
 	"KEEP_MINS": true, "KEEP_DAYS": true, "KEEP_WEEKS": true, "KEEP_MONTHS": true,
-	"GZIP_LEVEL": true, "TIMEOUT": true,
+	"GZIP_LEVEL": true, "TIMEOUT": true, "DB_SSL_CA": true, "DB_SSL_FINGERPRINT": true,
 }
 
 type Target struct {

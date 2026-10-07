@@ -58,6 +58,8 @@ Target files are parsed, not executed. Blank lines and lines starting with `#` a
 | `DRIVER` | `postgres`, `mysql` or `sqlite` (required) |
 | `DB_HOST`, `DB_PORT`, `DB_USER` | connection (postgres and mysql) |
 | `DB_PASSWORD_ENV` / `DB_PASSWORD_FILE` | the variable that holds the password, or a file that holds it |
+| `DB_SSL_CA` | postgres and mysql: a PEM file with the CA that signed the server certificate; the connection then requires TLS and verifies the certificate chain and the host name (`sslmode=verify-full` for PostgreSQL, `--ssl-verify-server-cert` for MySQL) |
+| `DB_SSL_FINGERPRINT` | mysql only: pin the server certificate by its SHA-256 (or SHA-1) fingerprint, for a server whose certificate carries no matching host name, such as MySQL's auto-generated one; get it with `openssl x509 -in server-cert.pem -noout -fingerprint -sha256`. Set at most one of the two |
 | `DATABASES` | comma-separated database names (postgres, mysql) |
 | `SQLITE_PATHS` | comma-separated database files; the file name without its extension names the dump |
 | `EXTRA_PATHS` | comma-separated directories archived as `<name>-<stamp>.tar.gz` beside the dumps |
@@ -149,7 +151,7 @@ A run is killed after `TIMEOUT` seconds and pings `/fail`. In central mode, runs
 
 - **No ports are opened.** The container only makes outbound connections: to the databases, and to the ping URLs.
 - **Secrets.** Passwords are given as the name of an environment variable (or a file), never inside a target file, and each target runs in a clean environment holding only its own values. A target file can still name any variable of the container, so treat the targets directory as trusted configuration. The dumps contain your data; protect the backup directory accordingly.
-- **MySQL connections do not verify the server certificate**, because MySQL's default certificate is self-signed and carries no host name. Keep database traffic on a private network.
+- **Server certificates are not verified by default.** MySQL's default certificate is self-signed and carries no host name, and PostgreSQL uses TLS only when the server offers it. Keep database traffic on a private network, or set `DB_SSL_CA` (a CA that signed a certificate for the host name you connect to) or, for MySQL, `DB_SSL_FINGERPRINT`.
 - **The image** is scanned with Trivy in CI, which fails on any HIGH or CRITICAL vulnerability that has a fix, and it is rebuilt from scratch every week so that fixed packages arrive. Operating-system vulnerabilities that Debian has not fixed yet are not mitigated here.
 
 ## Image

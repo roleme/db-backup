@@ -134,3 +134,14 @@ func TestAmbiguousPairsAreReportedInKeyOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadTargetAcceptsTLSKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeTarget(t, dir, "db", "DRIVER=mysql\nDB_SSL_CA=/certs/ca.pem\n")
+	writeTarget(t, dir, "fp", "DRIVER=mysql\nDB_SSL_FINGERPRINT=AA:BB\n")
+	for _, name := range []string{"db", "fp"} {
+		if _, err := LoadTarget(dir, name); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
