@@ -34,7 +34,7 @@ driver_dump() {
   local bin opts=()
   bin=$(pg_dump_bin) || return 1
   read -ra opts <<< "$EXTRA_OPTS"
-  "$bin" -d "$1" ${opts[@]+"${opts[@]}"} | gzip "-${GZIP_LEVEL}" > "$2"
+  "$bin" -d "$1" --no-owner --no-privileges --lock-wait-timeout=60s ${opts[@]+"${opts[@]}"} | gzip "-${GZIP_LEVEL}" > "$2"
 }
 
 driver_expected_tables() {
