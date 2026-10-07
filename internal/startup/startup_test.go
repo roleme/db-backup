@@ -195,3 +195,13 @@ func TestHealthy(t *testing.T) {
 		t.Error("a skipped target makes the container unhealthy")
 	}
 }
+
+func TestSingleModePassesTLSKeysToTheDriver(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "app")
+	s, f, _, _ := newStartup(t, env{"DRIVER": "sqlite", "SQLITE_PATHS": db, "DB_SSL_CA": "/certs/ca.pem"})
+	okSchedule(f)
+	if code := s.Run(context.Background()); code != 1 {
+		t.Errorf("exit = %d, want 1: DB_SSL_CA must reach the driver, which rejects it for sqlite", code)
+	}
+}

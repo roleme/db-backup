@@ -50,7 +50,17 @@ func (p *postgres) Validate() error {
 	if port == "" {
 		port = "5432"
 	}
+	ca, fingerprint, err := tlsKeys(p.cfg)
+	if err != nil {
+		return err
+	}
+	if fingerprint != "" {
+		return errors.New("DB_SSL_FINGERPRINT is only supported for mysql")
+	}
 	p.env = append(proc.BaseEnv(), "PGHOST="+p.cfg.Get("DB_HOST"), "PGPORT="+port, "PGUSER="+p.cfg.Get("DB_USER"), "PGPASSWORD="+password)
+	if ca != "" {
+		p.env = append(p.env, "PGSSLMODE=verify-full", "PGSSLROOTCERT="+ca)
+	}
 	p.dbs = config.SplitList(p.cfg.Get("DATABASES"))
 	if len(p.dbs) == 0 {
 		return errors.New("DATABASES lists no databases")
