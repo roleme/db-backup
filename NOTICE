@@ -1,0 +1,3 @@
+The dump layout (last/daily/weekly/monthly with hardlinks and latest symlinks)
+and the retention rules are adapted from prodrigestivill/docker-postgres-backup-local,
+used under the MIT licence in LICENSE.upstream.

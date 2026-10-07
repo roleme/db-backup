@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+
+mysql_scratch_dbs() {
+  compose exec -T -e MYSQL_PWD=rootpw mysql mysql -uroot -N -e "show databases like 'dbb_verify%'"
+}
+
+test_mysql_backup_and_verify() {
+  local bk out pwfile=${TMPDIR:-/tmp}/dbbtest_pw_$$
+  bk=$(new_volume my_bk)
+  printf 'shoppw\n' > "$pwfile"
+  chmod 644 "$pwfile"
+  local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=shop -e DB_PASSWORD_FILE=/run/pw -e DATABASES=shop -v "$pwfile:/run/pw:ro")
+
+  dbb "$bk" "${env[@]}" -e HC_PING_URL=http://mockping:8080/t_my -- backup > /dev/null \
+    || fail "mysql backup failed"
+  out=$(in_vol "$bk" 'cd /backups/last
+echo "tables:$(cat shop-[0-9]*.sql.gz.tables)"
+echo "posts:$(gunzip -c shop-latest.sql.gz | grep -c "CREATE TABLE .posts.")"')
+  assert_contains "$out" "tables:2" "table count"
+  assert_contains "$out" "posts:1" "posts table in dump"
+  ping_seen /t_my || fail "success ping not sent"
+
+  dbb "$bk" "${env[@]}" -e HC_VERIFY_PING_URL=http://mockping:8080/t_my_v -- verify > /dev/null \
+    || fail "mysql verify failed"
+  ping_seen /t_my_v || fail "verify ping not sent"
+  assert_eq "$(mysql_scratch_dbs)" "" "scratch database dropped"
+  rm -f "$pwfile"
+  pass "mysql backup and verify"
+}
+
+test_mysql_verify_detects_corrupt_dump() {
+  local bk out
+  bk=$(new_volume mycor_bk)
+  local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=shop -e DB_PASSWORD=shoppw -e DATABASES=shop)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null
+  in_vol "$bk" 'cd /backups/last; f=$(readlink shop-latest.sql.gz); printf "THIS IS NOT SQL;\n" | gzip > "$f"'
+  if out=$(dbb "$bk" "${env[@]}" -e HC_VERIFY_PING_URL=http://mockping:8080/t_my_cor -- verify 2>&1); then
+    fail "verify accepted a corrupt dump"
+  fi
+  assert_contains "$out" "syntax" "mysql rejected the corrupt dump"
+  ping_seen /t_my_cor/fail || fail "fail ping not sent"
+  assert_eq "$(mysql_scratch_dbs)" "" "scratch database dropped after a corrupt restore"
+  pass "mysql verify detects corrupt dump"
+}
+
+test_mysql_wrong_password() {
+  local bk rc=0
+  bk=$(new_volume mybad_bk)
+  dbb "$bk" -e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=shop -e DB_PASSWORD=wrong -e DATABASES=shop \
+    -e HC_PING_URL=http://mockping:8080/t_my_bad -- backup > /dev/null 2>&1 || rc=$?
+  assert_eq "$rc" 1 "wrong password exit code"
+  ping_seen /t_my_bad/fail || fail "fail ping not sent"
+  assert_eq "$(in_vol "$bk" 'ls -A /backups')" "" "nothing left behind"
+  pass "mysql wrong password"
+}
+
+test_mysql_verify_never_touches_live_database() {
+  local bk rows
+  bk=$(new_volume myguard_bk)
+  mysql_seed << 'SQL'
+CREATE DATABASE IF NOT EXISTS guard;
+CREATE TABLE IF NOT EXISTS guard.t (id INT);
+DELETE FROM guard.t;
+INSERT INTO guard.t VALUES (1), (2);
+GRANT ALL ON guard.* TO 'shop'@'%';
+SQL
+  local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=shop -e DB_PASSWORD=shoppw -e DATABASES=guard -e EXTRA_OPTS=--databases)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with --databases failed"
+  mysql_seed <<< "INSERT INTO guard.t VALUES (99);"
+  dbb "$bk" "${env[@]}" -- verify > /dev/null 2>&1 || true
+  rows=$(compose exec -T -e MYSQL_PWD=rootpw mysql mysql -uroot -N -e "select group_concat(id order by id) from guard.t")
+  assert_eq "$rows" "1,2,99" "live rows survive verify"
+  pass "mysql verify never touches the live database"
+}

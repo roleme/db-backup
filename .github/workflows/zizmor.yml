@@ -1,0 +1,13 @@
+name: zizmor
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    uses: roleme/workflows/.github/workflows/zizmor-reusable.yml@c5ca0171d8bd837163aeced94a705c81998daa26 # v2.5.0

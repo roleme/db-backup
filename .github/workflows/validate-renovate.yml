@@ -1,0 +1,14 @@
+name: validate-renovate
+
+on:
+  pull_request:
+    paths:
+      - "renovate.json"
+      - ".github/workflows/validate-renovate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-renovate:
+    uses: roleme/workflows/.github/workflows/validate-renovate-reusable.yml@c5ca0171d8bd837163aeced94a705c81998daa26 # v2.5.0

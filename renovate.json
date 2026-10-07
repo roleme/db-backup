@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>roleme/workflows//renovate-presets/grouped.json#v2.5.0"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^Dockerfile$/"],
+      "matchStrings": ["go install (?<depName>github\\.com/aptible/supercronic)@(?<currentValue>v[0-9][^\\s]*)"],
+      "datasourceTemplate": "go"
+    }
+  ]
+}
