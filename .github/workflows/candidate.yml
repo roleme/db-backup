@@ -18,6 +18,7 @@ concurrency:
 
 env:
   REGISTRY_IMAGE: ghcr.io/roleme/db-backup
+  CANDIDATE: ghcr.io/roleme/db-backup:sha-${{ github.sha }}
 
 jobs:
   candidate:
@@ -40,31 +41,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check for an existing candidate
-        id: check
-        env:
-          FORCE: ${{ inputs.force || false }}
-        run: |
-          set -euo pipefail
-          ref="$REGISTRY_IMAGE:sha-$GITHUB_SHA"
-          echo "ref=$ref" >>"$GITHUB_OUTPUT"
-          if [ "$FORCE" = true ]; then
-            echo "exists=false" >>"$GITHUB_OUTPUT"
-          elif out=$(docker buildx imagetools inspect "$ref" 2>&1); then
-            echo "exists=true" >>"$GITHUB_OUTPUT"
-          elif grep -qi 'not found' <<<"$out"; then
-            echo "exists=false" >>"$GITHUB_OUTPUT"
-          else
-            echo "::error::cannot tell whether $ref exists: $out"
-            exit 1
-          fi
+      - name: Look up candidate
+        id: lookup
+        run: digest=$(docker buildx imagetools inspect "$CANDIDATE" --format '{{.Manifest.Digest}}' 2>/dev/null) && echo "digest=$digest" >>"$GITHUB_OUTPUT" || true
 
       - name: Set up Buildx
-        if: steps.check.outputs.exists == 'false'
+        if: inputs.force || steps.lookup.outputs.digest == ''
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build and push candidate
-        if: steps.check.outputs.exists == 'false'
+        id: build
+        if: inputs.force || steps.lookup.outputs.digest == ''
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -72,27 +59,26 @@ jobs:
           push: true
           pull: ${{ inputs.force || false }}
           no-cache: ${{ inputs.force || false }}
-          tags: ${{ steps.check.outputs.ref }}
+          tags: ${{ env.CANDIDATE }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=db-backup
           cache-to: type=gha,scope=db-backup,mode=max
 
-      - name: Resolve digest
-        id: digest
+      - name: Select candidate image
+        id: image
         env:
-          REF: ${{ steps.check.outputs.ref }}
+          DIGEST: ${{ steps.build.outputs.digest || steps.lookup.outputs.digest }}
         run: |
           set -euo pipefail
-          digest=$(docker buildx imagetools inspect "$REF" --format '{{json .Manifest}}' | jq -r .digest)
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for $REF"; exit 1; }
-          echo "image=$REGISTRY_IMAGE@$digest" >>"$GITHUB_OUTPUT"
-          echo "Candidate \`$REF\` is \`$digest\`" >>"$GITHUB_STEP_SUMMARY"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for $CANDIDATE"; exit 1; }
+          echo "ref=$REGISTRY_IMAGE@$DIGEST" >>"$GITHUB_OUTPUT"
+          echo "Candidate \`$CANDIDATE\` is \`$DIGEST\`" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Pull candidate
         env:
-          IMAGE: ${{ steps.digest.outputs.image }}
+          IMAGE: ${{ steps.image.outputs.ref }}
         run: docker pull --quiet "$IMAGE"
 
       - name: Install Trivy
@@ -102,11 +88,11 @@ jobs:
 
       - name: Scan image
         env:
-          IMAGE: ${{ steps.digest.outputs.image }}
+          IMAGE: ${{ steps.image.outputs.ref }}
         run: trivy image --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 "$IMAGE"
 
       - name: Run tests
         env:
-          IMAGE: ${{ steps.digest.outputs.image }}
+          IMAGE: ${{ steps.image.outputs.ref }}
           SKIP_BUILD: "1"
         run: tests/run.sh

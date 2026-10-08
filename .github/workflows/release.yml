@@ -97,7 +97,7 @@ jobs:
             --jq '[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.completed_at) | last | .conclusion // "missing"')
           [ "$conclusion" = success ] || { echo "::error::check 'candidate' on $sha is $conclusion; run the candidate workflow for it"; exit 1; }
 
-          digest=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:sha-$sha" --format '{{json .Manifest}}' | jq -r .digest) \
+          digest=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:sha-$sha" --format '{{.Manifest.Digest}}') \
             || { echo "::error::no candidate image for $sha"; exit 1; }
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::bad candidate digest for $sha"; exit 1; }
 
@@ -132,7 +132,7 @@ jobs:
           tags=(-t "$REGISTRY_IMAGE:$VERSION" -t "$REGISTRY_IMAGE:$major.$minor" -t "$REGISTRY_IMAGE:latest")
           [ "$major" = 0 ] || tags+=(-t "$REGISTRY_IMAGE:$major")
           docker buildx imagetools create "${tags[@]}" "$REGISTRY_IMAGE@$DIGEST"
-          got=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          got=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:$VERSION" --format '{{.Manifest.Digest}}')
           [ "$got" = "$DIGEST" ] || { echo "::error::promoted $got, expected $DIGEST"; exit 1; }
           echo "Image: \`$REGISTRY_IMAGE:$VERSION\` is \`$DIGEST\`" >>"$GITHUB_STEP_SUMMARY"
 
