@@ -144,7 +144,6 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          context: git
           images: ${{ env.IMAGE }}
           flavor: |
             latest=false
@@ -153,6 +152,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
             type=semver,pattern={{major}},value=${{ needs.prepare.outputs.version }},enable=${{ !startsWith(needs.prepare.outputs.version, '0.') }}
             type=raw,value=latest
+          labels: |
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.sha }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
