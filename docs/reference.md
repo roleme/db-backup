@@ -155,7 +155,7 @@ A run is killed after `timeout` seconds and pings `/fail`. In central mode, runs
 
 ## Image
 
-Debian with the PostgreSQL 16 client (`pg_dump` for PostgreSQL 16 servers; a server of another major version needs its client added to the `Dockerfile`), `mariadb-dump`, `sqlite3` and `supercronic`, plus the tool itself: one statically linked Go binary, installed as `db-backup`, `db-backup-run` and `entrypoint`. About 218 MB uncompressed; idle memory about 15 MiB; a 205 MB SQLite database backs up and compresses under a 64 MB limit.
+Debian with the PostgreSQL 16 client (`pg_dump` for PostgreSQL 16 servers; a server of another major version needs its client added to the `Dockerfile`), `mariadb-dump`, `sqlite3` and `supercronic`, plus the tool itself: one statically linked Go binary, installed as `db-backup`, `db-backup-run` and `entrypoint`. About 157 MB uncompressed; idle memory about 15 MiB; a 205 MB SQLite database backs up and compresses under a 64 MB limit.
 
 ## Development
 

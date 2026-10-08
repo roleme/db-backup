@@ -12,7 +12,7 @@ test_usage_without_args() {
 test_image_size() {
   local size
   size=$(docker image inspect "$IMAGE" -f '{{.Size}}')
-  [ "$size" -lt 260000000 ] || fail "image is $((size / 1000000)) MB; the full mariadb-client (about 66 MB more, mostly Perl) has probably crept back in"
+  [ "$size" -lt 180000000 ] || fail "image is $((size / 1000000)) MB; Perl (about 55 MB, pulled in by the PostgreSQL client wrapper) or the full mariadb-client has probably crept back in"
   pass "image size $((size / 1000000)) MB"
 }
 
