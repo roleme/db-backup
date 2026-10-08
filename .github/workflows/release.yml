@@ -39,6 +39,7 @@ jobs:
     outputs:
       version: ${{ steps.plan.outputs.version }}
       sha: ${{ steps.plan.outputs.sha }}
+      digest: ${{ steps.plan.outputs.digest }}
     steps:
       - name: Plan version and commit
         id: plan
@@ -92,69 +93,28 @@ jobs:
             *) echo "::error::$sha is not on main ($status)"; exit 1 ;;
           esac
 
-          conclusion=$(gh api "repos/$REPO/commits/$sha/check-runs?check_name=test" \
+          conclusion=$(gh api "repos/$REPO/commits/$sha/check-runs?check_name=candidate" \
             --jq '[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.completed_at) | last | .conclusion // "missing"')
-          [ "$conclusion" = success ] || { echo "::error::check 'test' on $sha is $conclusion"; exit 1; }
+          [ "$conclusion" = success ] || { echo "::error::check 'candidate' on $sha is $conclusion; run the candidate workflow for it"; exit 1; }
 
-          echo "version=$version" >>"$GITHUB_OUTPUT"
-          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+          digest=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:sha-$sha" --format '{{json .Manifest}}' | jq -r .digest) \
+            || { echo "::error::no candidate image for $sha"; exit 1; }
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::bad candidate digest for $sha"; exit 1; }
+
+          {
+            echo "version=$version"
+            echo "sha=$sha"
+            echo "digest=$digest"
+          } >>"$GITHUB_OUTPUT"
           echo "Releasing v$version from $sha (previous: ${latest:-none})" >>"$GITHUB_STEP_SUMMARY"
 
   publish:
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
     permissions:
-      contents: read
       packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          persist-credentials: false
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Build image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: linux/amd64
-          pull: true
-          no-cache: true
-          load: true
-          tags: db-backup:test
-
-      - name: Install Trivy
-        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
-        with:
-          version: v0.74.0
-
-      - name: Scan image
-        run: trivy image --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 db-backup:test
-
-      - name: Run tests
-        env:
-          SKIP_BUILD: "1"
-        run: tests/run.sh
-
-      - name: Image metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-          flavor: |
-            latest=false
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.prepare.outputs.version }},enable=${{ !startsWith(needs.prepare.outputs.version, '0.') }}
-            type=raw,value=latest
-          labels: |
-            org.opencontainers.image.revision=${{ needs.prepare.outputs.sha }}
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -162,14 +122,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: Promote candidate
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          DIGEST: ${{ needs.prepare.outputs.digest }}
+        run: |
+          set -euo pipefail
+          IFS=. read -r major minor _ <<<"$VERSION"
+          tags=(-t "$REGISTRY_IMAGE:$VERSION" -t "$REGISTRY_IMAGE:$major.$minor" -t "$REGISTRY_IMAGE:latest")
+          [ "$major" = 0 ] || tags+=(-t "$REGISTRY_IMAGE:$major")
+          docker buildx imagetools create "${tags[@]}" "$REGISTRY_IMAGE@$DIGEST"
+          got=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          [ "$got" = "$DIGEST" ] || { echo "::error::promoted $got, expected $DIGEST"; exit 1; }
+          echo "Image: \`$REGISTRY_IMAGE:$VERSION\` is \`$DIGEST\`" >>"$GITHUB_STEP_SUMMARY"
 
   release:
     needs: [prepare, publish]

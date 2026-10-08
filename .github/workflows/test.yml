@@ -2,11 +2,24 @@ name: test
 
 on:
   pull_request:
-  push:
-    branches: [main]
+    paths:
+      - Dockerfile
+      - pgdg.asc
+      - go.mod
+      - go.sum
+      - cmd/**
+      - internal/**
+      - tests/**
+      - LICENSE.upstream
+      - NOTICE
+      - .github/workflows/test.yml
 
 permissions:
   contents: read
+
+concurrency:
+  group: test-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   test:

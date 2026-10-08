@@ -52,7 +52,7 @@ Images are tagged `X.Y.Z`, with `X.Y`, `X` and `latest` following the newest rel
 
 - `go test ./...` runs the Go unit tests; no Docker needed.
 - `tests/run.sh [filter]` builds the image and runs every `test_*` function whose name contains the filter, against real PostgreSQL, MySQL and SQLite containers. It needs Docker with Compose v2.
-- To release, run the `release` workflow from the Actions tab: choose patch, minor or major, or give an explicit version. It builds, scans and tests the head of `main`, pushes the image, then creates the tag and the GitHub release.
+- Every merge to `main` builds, scans and tests one image and pushes it as `sha-<commit>` (the `candidate` workflow); pull requests build and test locally and push nothing. To release, run the `release` workflow from the Actions tab: choose patch, minor or major, or give an explicit version. It adds the version tags to the existing candidate image of the head of `main` (same digest, no rebuild), then creates the git tag and the GitHub release. Run the `candidate` workflow with `force` to rebuild a stale candidate from scratch.
 - Write the failing test first. Every behaviour here has one.
 - Lint with `gofmt`, `go vet`, `shellcheck --severity=warning` on the shell test files and `hadolint` on the `Dockerfile`.
 - No explanatory comments in code; put the reasoning in the commit message.
