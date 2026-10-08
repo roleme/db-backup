@@ -2,17 +2,6 @@ name: test
 
 on:
   pull_request:
-    paths:
-      - Dockerfile
-      - pgdg.asc
-      - go.mod
-      - go.sum
-      - cmd/**
-      - internal/**
-      - tests/**
-      - LICENSE.upstream
-      - NOTICE
-      - .github/workflows/test.yml
 
 permissions:
   contents: read
