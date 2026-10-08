@@ -1,11 +1,15 @@
+FROM golang:1.26 AS supercronic
+
+RUN CGO_ENABLED=0 GOBIN=/out go install github.com/aptible/supercronic@v0.2.49
+
 FROM golang:1.26 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
+RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/db-backup ./cmd/db-backup \
-    && CGO_ENABLED=0 GOBIN=/out go install github.com/aptible/supercronic@v0.2.49
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/db-backup ./cmd/db-backup
 
 FROM debian:trixie-slim AS mariadb-dump
 
@@ -27,7 +31,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=mariadb-dump /usr/bin/mariadb-dump /usr/bin/mariadb-dump
-COPY --from=build /out/supercronic /usr/local/bin/supercronic
+COPY --from=supercronic /out/supercronic /usr/local/bin/supercronic
 COPY --from=build /out/db-backup /usr/local/bin/db-backup
 RUN ln /usr/local/bin/db-backup /usr/local/bin/db-backup-run \
     && ln /usr/local/bin/db-backup /usr/local/bin/entrypoint
