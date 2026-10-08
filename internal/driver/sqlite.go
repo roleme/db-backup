@@ -45,19 +45,19 @@ func (s *sqlite) Validate() error {
 			return err
 		}
 		if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
-			return fmt.Errorf("SQLITE_PATHS entry %s does not exist", path)
+			return fmt.Errorf("paths entry %s does not exist", path)
 		}
 		if name == "" {
 			name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		}
 		if _, dup := s.files[name]; dup {
-			return fmt.Errorf("SQLITE_PATHS has two files named %s", name)
+			return fmt.Errorf("paths has two files named %s", name)
 		}
 		s.files[name] = path
 		s.order = append(s.order, name)
 	}
 	if len(s.files) == 0 {
-		return errors.New("SQLITE_PATHS lists no files")
+		return errors.New("paths lists no files")
 	}
 	return nil
 }
@@ -69,7 +69,7 @@ func sqliteEntry(entry string) (name, path string, err error) {
 	}
 	name = strings.TrimSpace(entry[:idx])
 	if !unitNameRe.MatchString(name) {
-		return "", "", fmt.Errorf("SQLITE_PATHS entry %q has an invalid name", entry)
+		return "", "", fmt.Errorf("paths entry %q has an invalid name", entry)
 	}
 	return name, strings.TrimSpace(entry[idx+1:]), nil
 }

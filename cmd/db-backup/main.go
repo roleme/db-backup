@@ -20,11 +20,11 @@ import (
 )
 
 const (
-	defaultTargetsDir = "/config/targets.d"
+	defaultConfigFile = "/config/config.yaml"
 	defaultSkipped    = "/tmp/dbb-skipped"
 	defaultLockDir    = "/tmp/dbb-locks"
 	crontabPath       = "/tmp/crontab"
-	snapshotDir       = "/tmp/dbb-targets"
+	snapshotFile      = "/tmp/dbb-config.yaml"
 )
 
 func getenvDefault(key, def string) string {
@@ -105,7 +105,7 @@ func runnerRole(ctx context.Context, args []string) int {
 		return 2
 	}
 	r := runner.Runner{
-		TargetsDir: getenvDefault("TARGETS_DIR", defaultTargetsDir),
+		ConfigFile: getenvDefault("CONFIG_FILE", defaultConfigFile),
 		LockDir:    getenvDefault("DBB_LOCK_DIR", defaultLockDir),
 		Getenv:     os.Getenv,
 		Exec:       proc.Exec{NewGroup: true},
@@ -123,9 +123,9 @@ func startupRole(ctx context.Context) int {
 	s := &startup.Startup{
 		Getenv:      os.Getenv,
 		Supercronic: supercronic,
-		TargetsDir:  getenvDefault("TARGETS_DIR", defaultTargetsDir),
+		ConfigFile:  getenvDefault("CONFIG_FILE", defaultConfigFile),
 		Crontab:     crontabPath,
-		Snapshot:    snapshotDir,
+		Snapshot:    snapshotFile,
 		SkippedFile: getenvDefault("DBB_SKIPPED", defaultSkipped),
 		Runner:      proc.Exec{},
 		Ping:        ping.NewHTTP(),

@@ -11,12 +11,12 @@ import (
 func tlsKeys(cfg *config.Config) (ca, fingerprint string, err error) {
 	ca, fingerprint = cfg.Get("DB_SSL_CA"), cfg.Get("DB_SSL_FINGERPRINT")
 	if ca != "" && fingerprint != "" {
-		return "", "", errors.New("set only one of DB_SSL_CA and DB_SSL_FINGERPRINT")
+		return "", "", errors.New("set only one of tls.ca and tls.fingerprint")
 	}
 	if ca != "" {
 		f, err := os.Open(ca)
 		if err != nil {
-			return "", "", fmt.Errorf("DB_SSL_CA %s is not readable", ca)
+			return "", "", fmt.Errorf("tls.ca %s is not readable", ca)
 		}
 		f.Close()
 	}

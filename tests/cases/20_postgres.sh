@@ -82,7 +82,7 @@ test_postgres_list_edge_cases() {
   assert_contains "$out" "app2-latest.sql.gz" "database name trimmed"
   out=$(dbb "$bk" "${pg_env[@]}" -e DATABASES=, -- check 2>&1) || rc=$?
   assert_eq "$rc" 1 "empty DATABASES exit code"
-  assert_contains "$out" "DATABASES lists no databases" "empty DATABASES message"
+  assert_contains "$out" "databases lists no databases" "empty DATABASES message"
   pass "postgres list edge cases"
 }
 

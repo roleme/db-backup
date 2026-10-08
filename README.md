@@ -6,7 +6,7 @@ Scheduled, restore-tested backups for PostgreSQL, MySQL and SQLite, in one small
 - **Retention.** Keeps `last`, `daily`, `weekly` and `monthly` copies as hardlinks of one file, so keeping all four costs one copy.
 - **Restore test.** On a schedule it restores the newest dump into a scratch database and compares the table count. A dump that compresses fine but cannot be replayed is caught.
 - **Alerting.** Pings a Healthchecks-style URL after each run, with `/fail` appended on failure. A ping error never fails a dump.
-- **One container, many databases.** Each database is a small target file; targets run isolated from each other, with their own lock, timeout and ping.
+- **One container, many databases.** Each database is one entry in a YAML file; targets run isolated from each other, with their own lock, timeout and ping.
 
 ## Run it
 
@@ -19,26 +19,26 @@ services:
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
       APP_PING_URL: ${APP_PING_URL}
     volumes:
-      - ./targets.d:/config/targets.d:ro
+      - ./config:/config:ro
       - ./backups:/backups
 ```
 
-`targets.d/app.env`, one file per database (the file name is the target name):
+`config/config.yaml`, one entry per database under `targets` (the key is the target name):
 
+```yaml
+targets:
+  app:
+    driver: postgres
+    host: app-postgres
+    user: backup
+    password_env: APP_DB_PASSWORD
+    databases: [app]
+    schedule: "20 1 * * *"
+    verify_schedule: "0 5 * * 0"
+    ping_url_env: APP_PING_URL
 ```
-DRIVER=postgres
-DB_HOST=app-postgres
-DB_USER=backup
-DB_PASSWORD_ENV=APP_DB_PASSWORD
-DATABASES=app
-SCHEDULE=20 1 * * *
-VERIFY_SCHEDULE=0 5 * * 0
-HC_PING_URL_ENV=APP_PING_URL
-```
 
-There is no plain password key: a key ending in `_ENV` names an environment variable of the container, and its value is passed to that target only. Ping URLs can be given the same way (`HC_PING_URL_ENV`) or directly (`HC_PING_URL`). Target files are parsed, not executed, and an unknown key is an error.
-
-With no target files the container runs a single database configured from plain environment variables (`DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DATABASES`, `HC_PING_URL`, ...). That mode has no `*_ENV` indirection, `TIMEOUT` or per-target lock.
+There is no plain password field: `password_env` names an environment variable of the container, and its value is passed to that target only. Ping URLs can be given the same way (`ping_url_env`) or directly (`ping_url`). An unknown field is an error, and a schedule must be quoted.
 
 ## Versions
 

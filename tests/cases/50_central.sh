@@ -6,21 +6,23 @@ test_central_runs_each_target() {
   data=$(new_volume cen_data)
   bk=$(new_volume cen_bk)
   sqlite_data "$data"
-  reset_targets
-  write_target alpha <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-HC_PING_URL=http://mockping:8080/t_cen_alpha
-HC_VERIFY_PING_URL=http://mockping:8080/t_cen_alpha_v
-TARGET
-  write_target beta <<'TARGET'
-DRIVER=postgres
-DB_HOST=postgres
-DB_USER=dbb
-DB_PASSWORD_ENV=BETA_PASSWORD
-DATABASES=app2
-HC_PING_URL_ENV=BETA_PING
-TARGET
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  alpha:
+    driver: sqlite
+    paths:
+      app: /data/app.db
+    ping_url: http://mockping:8080/t_cen_alpha
+    verify_ping_url: http://mockping:8080/t_cen_alpha_v
+  beta:
+    driver: postgres
+    host: postgres
+    user: dbb
+    password_env: BETA_PASSWORD
+    databases: [app2]
+    ping_url_env: BETA_PING
+CONFIG
   local -a beta=(-e BETA_PASSWORD=pgpass -e BETA_PING=http://mockping:8080/t_cen_beta)
   dbbr "$bk" -v "$data:/data" -- alpha backup > /dev/null || fail "alpha backup failed"
   dbbr "$bk" "${beta[@]}" -- beta backup > /dev/null || fail "beta backup failed"
@@ -47,18 +49,19 @@ sleep 2
 echo end >> /backups/order.txt
 STUB
   chmod +x "$stub"
-  reset_targets
-  write_target one <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/one.db
-DB_PASSWORD_ENV=ONE_PW
-TARGET
-  write_target two <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/two.db
-DB_PASSWORD_ENV=TWO_PW
-TARGET
-  docker run --rm -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" -v "$stub:/usr/local/bin/db-backup:ro" \
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  one:
+    driver: sqlite
+    paths: {one: /data/one.db}
+    password_env: ONE_PW
+  two:
+    driver: sqlite
+    paths: {two: /data/two.db}
+    password_env: TWO_PW
+CONFIG
+  docker run --rm -v "$bk:/backups" -v "$CONFIG_HOST:/config:ro" -v "$stub:/usr/local/bin/db-backup:ro" \
     -e ONE_PW=secret-one -e TWO_PW=secret-two --entrypoint bash "$IMAGE" \
     -c 'db-backup-run one backup & db-backup-run one backup & wait'
   out=$(in_vol "$bk" 'cat /backups/env.*.txt')
@@ -74,34 +77,34 @@ TARGET
 test_central_rejects_bad_targets() {
   local bk out rc
   bk=$(new_volume bad_bk)
-  reset_targets
-  write_target typo <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-SCHEDLE=@daily
-TARGET
-  write_target secret <<'TARGET'
-DRIVER=postgres
-DB_HOST=postgres
-DB_USER=dbb
-DB_PASSWORD=hunter2
-DATABASES=app
-TARGET
-  write_target noenv <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-DB_PASSWORD_ENV=NOT_SET
-TARGET
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  typo:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    schedle: "@daily"
+  secret:
+    driver: postgres
+    host: postgres
+    user: dbb
+    password: hunter2
+    databases: [app]
+  noenv:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    password_env: NOT_SET
+CONFIG
 
   rc=0
   out=$(dbbr "$bk" -- typo check 2>&1) || rc=$?
   assert_eq "$rc" 1 "typo exit code"
-  assert_contains "$out" "unknown key SCHEDLE" "typo message"
+  assert_contains "$out" "field schedle not found" "typo message"
 
   rc=0
   out=$(dbbr "$bk" -- secret check 2>&1) || rc=$?
   assert_eq "$rc" 1 "plain password exit code"
-  assert_contains "$out" "unknown key DB_PASSWORD" "plain password message"
+  assert_contains "$out" "field password not found" "plain password message"
 
   rc=0
   out=$(dbbr "$bk" -- noenv check 2>&1) || rc=$?
@@ -112,6 +115,11 @@ TARGET
   out=$(dbbr "$bk" -- 'bad/name' check 2>&1) || rc=$?
   assert_eq "$rc" 1 "bad name exit code"
   assert_contains "$out" "invalid target name" "bad name message"
+
+  rc=0
+  out=$(dbbr "$bk" -- missing check 2>&1) || rc=$?
+  assert_eq "$rc" 1 "undefined target exit code"
+  assert_contains "$out" "target missing is not defined" "undefined target message"
   pass "central rejects bad targets"
 }
 
@@ -120,16 +128,17 @@ test_central_duplicate_dump_names() {
   data=$(new_volume dup_data)
   bk=$(new_volume dup_bk)
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'mkdir -p /data/a /data/b; sqlite3 /data/a/app.db "create table t (x)"; sqlite3 /data/b/app.db "create table t (x)"'
-  reset_targets
-  write_target first <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/a/app.db
-TARGET
-  write_target second <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/b/app.db
-TARGET
-  out=$(docker run --rm -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" 2>&1) || rc=$?
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  first:
+    driver: sqlite
+    paths: {app: /data/a/app.db}
+  second:
+    driver: sqlite
+    paths: {app: /data/b/app.db}
+CONFIG
+  out=$(docker run --rm -v "$data:/data" -v "$bk:/backups" -v "$CONFIG_HOST:/config:ro" "$IMAGE" 2>&1) || rc=$?
   assert_eq "$rc" 1 "duplicate dump names exit code"
   assert_contains "$out" "dump name app.db.gz is used by targets first and second" "duplicate message"
   pass "central duplicate dump names"
@@ -138,16 +147,18 @@ TARGET
 test_central_timeout_kills_and_alerts() {
   local bk rc=0 start elapsed
   bk=$(new_volume slow_bk)
-  reset_targets
-  write_target slow <<'TARGET'
-DRIVER=postgres
-DB_HOST=postgres
-DB_USER=dbb
-DB_PASSWORD_ENV=PG_PASSWORD
-DATABASES=lockdb
-TIMEOUT=3
-HC_PING_URL=http://mockping:8080/t_cen_slow
-TARGET
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  slow:
+    driver: postgres
+    host: postgres
+    user: dbb
+    password_env: PG_PASSWORD
+    databases: [lockdb]
+    timeout: 3
+    ping_url: http://mockping:8080/t_cen_slow
+CONFIG
   compose exec -d -T postgres psql -U dbb -d lockdb -c "BEGIN; LOCK TABLE t IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(30);"
   sleep 2
   start=$(date +%s)
@@ -166,18 +177,19 @@ test_central_entrypoint_generates_crontab() {
   bk=$(new_volume crt_bk)
   name=dbbtest_crt_$$
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/a.db "create table t (x)"; sqlite3 /data/b.db "create table t (x)"'
-  reset_targets
-  write_target a <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/a.db
-SCHEDULE=0 3 * * *
-VERIFY_SCHEDULE=30 4 * * 0
-TARGET
-  write_target b <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/b.db
-TARGET
-  docker run -d --name "$name" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  a:
+    driver: sqlite
+    paths: {a: /data/a.db}
+    schedule: "0 3 * * *"
+    verify_schedule: "30 4 * * 0"
+  b:
+    driver: sqlite
+    paths: {b: /data/b.db}
+CONFIG
+  docker run -d --name "$name" -v "$data:/data" -v "$bk:/backups" -v "$CONFIG_HOST:/config:ro" "$IMAGE" > /dev/null
   if ! wait_for 20 "docker exec $name pgrep -x supercronic > /dev/null 2>&1"; then
     docker logs "$name" >&2
     docker rm -fv "$name" > /dev/null
@@ -197,18 +209,20 @@ test_central_backup_on_start() {
   bk=$(new_volume cst_bk)
   name=dbbtest_cst_$$
   sqlite_data "$data"
-  reset_targets
-  write_target only <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-HC_PING_URL=http://mockping:8080/t_cen_start
-TARGET
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  only:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    ping_url: http://mockping:8080/t_cen_start
+CONFIG
   docker run -d --name "$name" --network "$NETWORK" -v "$data:/data" -v "$bk:/backups" \
-    -v "$TARGETS_HOST:/config/targets.d:ro" -e BACKUP_ON_START=TRUE "$IMAGE" > /dev/null
+    -v "$CONFIG_HOST:/config:ro" -e BACKUP_ON_START=TRUE "$IMAGE" > /dev/null
   if ! wait_for 30 'ping_seen /t_cen_start'; then
     docker logs "$name" >&2
     docker rm -fv "$name" > /dev/null
-    fail "no dump at container start in central mode"
+    fail "no dump at container start"
   fi
   docker rm -fv "$name" > /dev/null
   pass "central backup on start"
@@ -220,26 +234,25 @@ test_central_bad_target_is_skipped_not_fatal() {
   bk=$(new_volume skip_bk)
   name=dbbtest_skip_$$
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/a.db "create table t (x)"; sqlite3 /data/z.db "create table t (x)"'
-  reset_targets
-  write_target a <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/a.db
-TARGET
-  write_target my.app <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/a.db
-TARGET
-  write_target z <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/z.db
-TARGET
-  write_target broken <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/a.db
-BOGUS=1
-HC_PING_URL=http://mockping:8080/t_cen_broken
-TARGET
-  docker run -d --name "$name" --network "$NETWORK" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  a:
+    driver: sqlite
+    paths: {a: /data/a.db}
+  my.app:
+    driver: sqlite
+    paths: {x: /data/a.db}
+  z:
+    driver: sqlite
+    paths: {z: /data/z.db}
+  broken:
+    driver: sqlite
+    paths: {y: /data/a.db}
+    bogus: 1
+    ping_url: http://mockping:8080/t_cen_broken
+CONFIG
+  docker run -d --name "$name" --network "$NETWORK" -v "$data:/data" -v "$bk:/backups" -v "$CONFIG_HOST:/config:ro" "$IMAGE" > /dev/null
   if ! wait_for 20 "docker exec $name pgrep -x supercronic > /dev/null 2>&1"; then
     docker logs "$name" >&2
     docker rm -fv "$name" > /dev/null
@@ -257,7 +270,7 @@ TARGET
   assert_not_contains "$tab" "my.app" "the badly named target is not scheduled"
   assert_not_contains "$tab" "broken" "the invalid target is not scheduled"
   assert_contains "$logs" "invalid target name 'my.app'" "the skipped name is reported"
-  assert_contains "$logs" "unknown key BOGUS" "the skipped target's error is reported"
+  assert_contains "$logs" "field bogus not found" "the skipped target's error is reported"
   ping_seen /t_cen_broken/fail || fail "no fail ping for the skipped target"
   pass "central bad target is skipped not fatal"
 }
@@ -266,13 +279,15 @@ test_central_no_valid_targets_stops_start() {
   local bk name rc out
   bk=$(new_volume none_bk)
   name=dbbtest_none_$$
-  reset_targets
-  write_target broken <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/a.db
-BOGUS=1
-TARGET
-  docker run -d --name "$name" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  broken:
+    driver: sqlite
+    paths: {a: /data/a.db}
+    bogus: 1
+CONFIG
+  docker run -d --name "$name" -v "$bk:/backups" -v "$CONFIG_HOST:/config:ro" "$IMAGE" > /dev/null
   if ! wait_for 20 "[ \"\$(docker inspect -f '{{.State.Running}}' $name)\" = false ]"; then
     docker rm -fv "$name" > /dev/null
     fail "a container with no valid target kept running"
@@ -286,41 +301,38 @@ TARGET
 }
 
 test_central_rejects_bad_schedules() {
-  local data bk name rc out
+  local data bk rc out name
   data=$(new_volume sched_data)
   bk=$(new_volume sched_bk)
   sqlite_data "$data"
-  reset_targets
-  write_target short <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-SCHEDULE=0 3 * *
-TARGET
-  write_target inject <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-SCHEDULE=* * * * * touch /backups/PWNED; echo
-TARGET
-  write_target badverify <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-VERIFY_SCHEDULE=0 3 * * *; id
-TARGET
-  write_target five <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-SCHEDULE=0 3 * * *
-TARGET
-  write_target seven <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-SCHEDULE=*/5 * * * * * *
-TARGET
-  write_target macro <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-SCHEDULE=@daily
-TARGET
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  short:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    schedule: "0 3 * *"
+  inject:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    schedule: "* * * * * touch /backups/PWNED; echo"
+  badverify:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    verify_schedule: "0 3 * * *; id"
+  five:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    schedule: "0 3 * * *"
+  seven:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    schedule: "*/5 * * * * * *"
+  macro:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    schedule: "@daily"
+CONFIG
   for name in short inject badverify; do
     rc=0
     out=$(dbbr "$bk" -v "$data:/data" -- "$name" check 2>&1) || rc=$?
@@ -333,33 +345,34 @@ TARGET
   pass "central rejects bad schedules"
 }
 
-test_central_rejects_ambiguous_keys() {
+test_central_rejects_ambiguous_fields() {
   local bk out rc
   bk=$(new_volume amb_bk)
-  reset_targets
-  write_target both <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-HC_PING_URL=http://mockping:8080/x
-HC_PING_URL_ENV=SOME_URL
-TARGET
-  write_target pw <<'TARGET'
-DRIVER=postgres
-DB_HOST=postgres
-DB_USER=dbb
-DB_PASSWORD_ENV=PW
-DB_PASSWORD_FILE=/run/pw
-DATABASES=app
-TARGET
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  both:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    ping_url: http://mockping:8080/x
+    ping_url_env: SOME_URL
+  pw:
+    driver: postgres
+    host: postgres
+    user: dbb
+    password_env: PW
+    password_file: /run/pw
+    databases: [app]
+CONFIG
   rc=0
   out=$(dbbr "$bk" -- both check 2>&1) || rc=$?
-  assert_eq "$rc" 1 "both ping keys exit code"
-  assert_contains "$out" "set only one of HC_PING_URL and HC_PING_URL_ENV" "both ping keys message"
+  assert_eq "$rc" 1 "both ping fields exit code"
+  assert_contains "$out" "set only one of ping_url and ping_url_env" "both ping fields message"
   rc=0
   out=$(dbbr "$bk" -- pw check 2>&1) || rc=$?
-  assert_eq "$rc" 1 "both password keys exit code"
-  assert_contains "$out" "set only one of DB_PASSWORD_ENV and DB_PASSWORD_FILE" "both password keys message"
-  pass "central rejects ambiguous keys"
+  assert_eq "$rc" 1 "both password fields exit code"
+  assert_contains "$out" "set only one of password_env and password_file" "both password fields message"
+  pass "central rejects ambiguous fields"
 }
 
 test_central_edit_after_start_is_ignored_until_restart() {
@@ -368,25 +381,27 @@ test_central_edit_after_start_is_ignored_until_restart() {
   bk=$(new_volume snap_bk)
   name=dbbtest_snap_$$
   sqlite_data "$data"
-  reset_targets
-  write_target live <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/app.db
-SCHEDULE=*/3 * * * * * *
-HC_PING_URL=http://mockping:8080/t_cen_snap
-TARGET
-  docker run -d --name "$name" --network "$NETWORK" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  live:
+    driver: sqlite
+    paths: {app: /data/app.db}
+    schedule: "*/3 * * * * * *"
+    ping_url: http://mockping:8080/t_cen_snap
+CONFIG
+  docker run -d --name "$name" --network "$NETWORK" -v "$data:/data" -v "$bk:/backups" -v "$CONFIG_HOST:/config:ro" "$IMAGE" > /dev/null
   if ! wait_for 25 'ping_seen /t_cen_snap'; then
     docker logs "$name" >&2
     docker rm -fv "$name" > /dev/null
     fail "the scheduled run never pinged"
   fi
-  printf 'BOGUS=1\n' >> "$TARGETS_HOST/live.env"
+  printf '    bogus: 1\n' >> "$CONFIG_HOST/config.yaml"
   before=$(ping_count /t_cen_snap)
   if ! wait_for 25 "[ \"\$(ping_count /t_cen_snap)\" -gt \"$before\" ]"; then
     docker logs "$name" >&2
     docker rm -fv "$name" > /dev/null
-    fail "runs stopped after the target file was edited"
+    fail "runs stopped after the config file was edited"
   fi
   docker rm -fv "$name" > /dev/null
   ! ping_seen /t_cen_snap/fail || fail "a fail ping was sent after the edit"
@@ -399,17 +414,18 @@ test_central_scheduler_rejected_schedule_is_skipped() {
   bk=$(new_volume badsched_bk)
   name=dbbtest_badsched_$$
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/a.db "create table t (x)"; sqlite3 /data/b.db "create table t (x)"'
-  reset_targets
-  write_target a <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/a.db
-TARGET
-  write_target b <<'TARGET'
-DRIVER=sqlite
-SQLITE_PATHS=/data/b.db
-SCHEDULE=99 99 * * *
-TARGET
-  docker run -d --name "$name" -v "$data:/data" -v "$bk:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" "$IMAGE" > /dev/null
+  reset_config
+  write_config <<'CONFIG'
+targets:
+  a:
+    driver: sqlite
+    paths: {a: /data/a.db}
+  b:
+    driver: sqlite
+    paths: {b: /data/b.db}
+    schedule: "99 99 * * *"
+CONFIG
+  docker run -d --name "$name" -v "$data:/data" -v "$bk:/backups" -v "$CONFIG_HOST:/config:ro" "$IMAGE" > /dev/null
   if ! wait_for 20 "docker exec $name pgrep -x supercronic > /dev/null 2>&1"; then
     docker logs "$name" >&2
     docker rm -fv "$name" > /dev/null

@@ -31,7 +31,7 @@ func ForConfig(cfg *config.Config, run proc.Runner) ([]Adapter, error) {
 	case "sqlite":
 		main = newSQLite(cfg, run)
 	default:
-		return nil, fmt.Errorf("DRIVER must be postgres, mysql or sqlite (got '%s')", cfg.Driver)
+		return nil, fmt.Errorf("driver must be postgres, mysql or sqlite (got '%s')", cfg.Driver)
 	}
 	adapters := []Adapter{main}
 	if cfg.ExtraPaths != "" {

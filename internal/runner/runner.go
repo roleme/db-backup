@@ -16,7 +16,7 @@ import (
 const TimeoutExit = 124
 
 type Runner struct {
-	TargetsDir string
+	ConfigFile string
 	LockDir    string
 	Getenv     func(string) string
 	Exec       proc.Runner
@@ -24,7 +24,12 @@ type Runner struct {
 }
 
 func (r Runner) Run(ctx context.Context, name, action string) int {
-	t, err := config.LoadTarget(r.TargetsDir, name)
+	f, err := config.Load(r.ConfigFile)
+	if err != nil {
+		logx.Errorf("%v", err)
+		return 1
+	}
+	t, err := f.Target(name)
 	if err != nil {
 		logx.Errorf("%v", err)
 		return 1

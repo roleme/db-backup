@@ -28,7 +28,7 @@ func testConfig(t *testing.T, kv ...string) *config.Config {
 func TestPathsRejectsDuplicateNames(t *testing.T) {
 	cfg := testConfig(t, "EXTRA_PATHS", "/data/a/up,/data/b/up")
 	err := newPaths(cfg, &proc.Fake{}).Validate()
-	if err == nil || !strings.Contains(err.Error(), "EXTRA_PATHS has two directories named up") {
+	if err == nil || !strings.Contains(err.Error(), "extra_paths has two directories named up") {
 		t.Errorf("error = %v", err)
 	}
 }
@@ -63,7 +63,7 @@ func TestPathsMissingDirectoryFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := p.Dump(context.Background(), "nope", &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "EXTRA_PATHS entry /data/nope is not a directory") {
+	if err == nil || !strings.Contains(err.Error(), "extra_paths entry /data/nope is not a directory") {
 		t.Errorf("error = %v", err)
 	}
 }

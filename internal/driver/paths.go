@@ -28,7 +28,7 @@ func (p *paths) Validate() error {
 	for _, path := range config.SplitList(p.cfg.ExtraPaths) {
 		name := filepath.Base(path)
 		if _, dup := p.dirs[name]; dup {
-			return fmt.Errorf("EXTRA_PATHS has two directories named %s", name)
+			return fmt.Errorf("extra_paths has two directories named %s", name)
 		}
 		p.dirs[name] = path
 		p.order = append(p.order, name)
@@ -47,7 +47,7 @@ func (p *paths) Suffix() string {
 func (p *paths) Dump(ctx context.Context, unit string, w io.Writer) error {
 	path := p.dirs[unit]
 	if st, err := os.Stat(path); err != nil || !st.IsDir() {
-		return fmt.Errorf("EXTRA_PATHS entry %s is not a directory", path)
+		return fmt.Errorf("extra_paths entry %s is not a directory", path)
 	}
 	return p.run.Run(ctx, proc.Spec{
 		Name:   "tar",

@@ -45,10 +45,22 @@ func (c *Config) Get(key string) string {
 	return c.vars[key]
 }
 
+var fieldNames = map[string]string{
+	"DRIVER": "driver", "DB_HOST": "host", "DB_USER": "user", "DATABASES": "databases",
+	"SQLITE_PATHS": "paths", "DB_PASSWORD": "password_file",
+}
+
+func fieldName(key string) string {
+	if f, ok := fieldNames[key]; ok {
+		return f
+	}
+	return key
+}
+
 func (c *Config) Require(names ...string) error {
 	for _, n := range names {
 		if c.vars[n] == "" {
-			return fmt.Errorf("%s is required", n)
+			return fmt.Errorf("%s is required", fieldName(n))
 		}
 	}
 	return nil
@@ -58,7 +70,7 @@ func (c *Config) Secret(name string) (string, error) {
 	if file := c.vars[name+"_FILE"]; file != "" {
 		b, err := os.ReadFile(file)
 		if err != nil {
-			return "", fmt.Errorf("%s_FILE is not readable", name)
+			return "", fmt.Errorf("%s is not readable", fieldName(name))
 		}
 		return strings.NewReplacer("\r", "", "\n", "").Replace(string(b)), nil
 	}
@@ -75,11 +87,11 @@ func SplitList(s string) []string {
 	return out
 }
 
-func CheckSchedule(prefix, key, value string) error {
+func checkSchedule(field, value string) error {
 	if shortcutRe.MatchString(value) || fieldsRe.MatchString(value) {
 		return nil
 	}
-	return fmt.Errorf("%s: invalid schedule in %s: %s", prefix, key, value)
+	return fmt.Errorf("invalid schedule in %s: %s", field, value)
 }
 
 func intVar(vars map[string]string, key string, def int, re *regexp.Regexp, msg string) (int, error) {
@@ -116,7 +128,7 @@ func FromVars(vars map[string]string) (*Config, error) {
 	case "postgres", "mysql", "sqlite":
 		c.Driver = vars["DRIVER"]
 	default:
-		return nil, fmt.Errorf("DRIVER must be postgres, mysql or sqlite (got '%s')", vars["DRIVER"])
+		return nil, fmt.Errorf("driver must be postgres, mysql or sqlite (got '%s')", vars["DRIVER"])
 	}
 	c.BackupDir = vars["BACKUP_DIR"]
 	if c.BackupDir == "" {

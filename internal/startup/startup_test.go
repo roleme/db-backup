@@ -28,16 +28,13 @@ func newStartup(t *testing.T, e env) (*Startup, *proc.Fake, *recPinger, string) 
 	s := &Startup{
 		Getenv:      e.get,
 		Supercronic: "/usr/local/bin/supercronic",
-		TargetsDir:  filepath.Join(root, "targets.d"),
+		ConfigFile:  filepath.Join(root, "config.yaml"),
 		Crontab:     filepath.Join(root, "crontab"),
-		Snapshot:    filepath.Join(root, "snapshot"),
+		Snapshot:    filepath.Join(root, "snapshot.yaml"),
 		SkippedFile: filepath.Join(root, "skipped"),
 		Runner:      f,
 		Ping:        p,
 		Exec:        func(string, []string, []string) error { return nil },
-	}
-	if err := os.MkdirAll(s.TargetsDir, 0o755); err != nil {
-		t.Fatal(err)
 	}
 	return s, f, p, root
 }
@@ -51,9 +48,9 @@ func addDB(t *testing.T, dir, name string) string {
 	return p
 }
 
-func target(t *testing.T, s *Startup, name, body string) {
+func writeConfig(t *testing.T, s *Startup, body string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(s.TargetsDir, name+".env"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(s.ConfigFile, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -62,35 +59,23 @@ func okSchedule(f *proc.Fake) {
 	f.Handler = func(sp proc.Spec) error { return nil }
 }
 
-func TestSingleModeWritesTheCrontab(t *testing.T) {
-	data := t.TempDir()
-	db := addDB(t, data, "app")
-	s, f, _, _ := newStartup(t, env{"DRIVER": "sqlite", "SQLITE_PATHS": db, "SCHEDULE": "0 3 * * *", "VERIFY_SCHEDULE": "30 4 * * 0"})
-	okSchedule(f)
-	if code := s.Run(context.Background()); code != 0 {
-		t.Fatalf("exit = %d", code)
-	}
-	b, _ := os.ReadFile(s.Crontab)
-	want := "0 3 * * * db-backup backup\n30 4 * * 0 db-backup verify\n"
-	if string(b) != want {
-		t.Errorf("crontab = %q, want %q", b, want)
-	}
-}
-
-func TestSingleModeBadConfigExitsOne(t *testing.T) {
-	s, _, _, _ := newStartup(t, env{"DRIVER": "sqlite"})
-	if code := s.Run(context.Background()); code != 1 {
-		t.Errorf("exit = %d", code)
-	}
-}
-
 func TestCentralSkipsBadTargetsAndSignals(t *testing.T) {
 	data := t.TempDir()
 	db := addDB(t, data, "good")
 	s, f, p, _ := newStartup(t, env{"BAD_URL": "http://p/bad"})
 	okSchedule(f)
-	target(t, s, "good", "DRIVER=sqlite\nSQLITE_PATHS="+db+"\nSCHEDULE=0 3 * * *\nVERIFY_SCHEDULE=30 4 * * 0\n")
-	target(t, s, "bad", "DRIVER=sqlite\nSQLITE_PATHS=/nope.db\nHC_PING_URL_ENV=BAD_URL\n")
+	writeConfig(t, s, `
+targets:
+  good:
+    driver: sqlite
+    paths: {good: `+db+`}
+    schedule: "0 3 * * *"
+    verify_schedule: "30 4 * * 0"
+  bad:
+    driver: sqlite
+    paths: {bad: /nope.db}
+    ping_url_env: BAD_URL
+`)
 	if code := s.Run(context.Background()); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
@@ -105,8 +90,13 @@ func TestCentralSkipsBadTargetsAndSignals(t *testing.T) {
 	if strings.Join(p.got, ",") != "http://p/bad/fail" {
 		t.Errorf("pings = %v", p.got)
 	}
-	if _, err := os.Stat(filepath.Join(s.Snapshot, "good.env")); err != nil {
-		t.Error("the valid target must be snapshotted")
+	snap, err := os.ReadFile(s.Snapshot)
+	if err != nil {
+		t.Fatal("the config must be snapshotted")
+	}
+	orig, _ := os.ReadFile(s.ConfigFile)
+	if string(snap) != string(orig) {
+		t.Errorf("snapshot differs from the config: %q", snap)
 	}
 }
 
@@ -123,8 +113,11 @@ func TestCentralSkipsTargetsTheSchedulerRejects(t *testing.T) {
 		}
 		return nil
 	}
-	target(t, s, "a", "DRIVER=sqlite\nSQLITE_PATHS="+db+"\nSCHEDULE=99 99 * * *\n")
-	target(t, s, "b", "DRIVER=sqlite\nSQLITE_PATHS="+db+"\n")
+	writeConfig(t, s, `
+targets:
+  a: {driver: sqlite, paths: {a: `+db+`}, schedule: "99 99 * * *"}
+  b: {driver: sqlite, paths: {b: `+db+`}}
+`)
 	if code := s.Run(context.Background()); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
@@ -144,8 +137,11 @@ func TestCentralDuplicateDumpNamesStop(t *testing.T) {
 	dbA, dbB := addDB(t, a, "app"), addDB(t, b, "app")
 	s, f, _, _ := newStartup(t, env{})
 	okSchedule(f)
-	target(t, s, "one", "DRIVER=sqlite\nSQLITE_PATHS="+dbA+"\n")
-	target(t, s, "two", "DRIVER=sqlite\nSQLITE_PATHS="+dbB+"\n")
+	writeConfig(t, s, `
+targets:
+  one: {driver: sqlite, paths: {app: `+dbA+`}}
+  two: {driver: sqlite, paths: {app: `+dbB+`}}
+`)
 	if code := s.Run(context.Background()); code != 1 {
 		t.Errorf("exit = %d, want 1", code)
 	}
@@ -154,7 +150,7 @@ func TestCentralDuplicateDumpNamesStop(t *testing.T) {
 func TestCentralWithNoValidTargetStops(t *testing.T) {
 	s, f, _, _ := newStartup(t, env{})
 	okSchedule(f)
-	target(t, s, "bad", "DRIVER=sqlite\nSQLITE_PATHS=/nope.db\n")
+	writeConfig(t, s, "targets:\n  bad: {driver: sqlite, paths: {bad: /nope.db}}\n")
 	if code := s.Run(context.Background()); code != 1 {
 		t.Errorf("exit = %d, want 1", code)
 	}
@@ -165,7 +161,7 @@ func TestBackupOnStartRunsEveryTargetOnce(t *testing.T) {
 	db := addDB(t, data, "a")
 	s, f, _, _ := newStartup(t, env{"BACKUP_ON_START": "TRUE"})
 	okSchedule(f)
-	target(t, s, "a", "DRIVER=sqlite\nSQLITE_PATHS="+db+"\n")
+	writeConfig(t, s, "targets:\n  a: {driver: sqlite, paths: {a: "+db+"}}\n")
 	if code := s.Run(context.Background()); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
@@ -196,12 +192,62 @@ func TestHealthy(t *testing.T) {
 	}
 }
 
-func TestSingleModePassesTLSKeysToTheDriver(t *testing.T) {
-	data := t.TempDir()
-	db := addDB(t, data, "app")
-	s, f, _, _ := newStartup(t, env{"DRIVER": "sqlite", "SQLITE_PATHS": db, "DB_SSL_CA": "/certs/ca.pem"})
+func TestUnreadableOrBrokenConfigStops(t *testing.T) {
+	s, f, _, _ := newStartup(t, env{})
 	okSchedule(f)
 	if code := s.Run(context.Background()); code != 1 {
-		t.Errorf("exit = %d, want 1: DB_SSL_CA must reach the driver, which rejects it for sqlite", code)
+		t.Errorf("missing config: exit = %d, want 1", code)
+	}
+	writeConfig(t, s, "targets: [")
+	if code := s.Run(context.Background()); code != 1 {
+		t.Errorf("broken yaml: exit = %d, want 1", code)
+	}
+}
+
+func TestInvalidTargetNamesAreSkippedWithASignal(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "good")
+	s, f, p, _ := newStartup(t, env{})
+	okSchedule(f)
+	writeConfig(t, s, `
+targets:
+  good: {driver: sqlite, paths: {good: `+db+`}}
+  "bad name": {driver: sqlite, paths: {x: `+db+`}, ping_url: http://p/bad-name}
+`)
+	if code := s.Run(context.Background()); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if _, err := os.Stat(s.SkippedFile); err != nil {
+		t.Error("the skipped marker must exist")
+	}
+	if strings.Join(p.got, ",") != "http://p/bad-name/fail" {
+		t.Errorf("pings = %v", p.got)
+	}
+}
+
+func TestCentralPassesTLSToTheDriver(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "app")
+	s, f, _, _ := newStartup(t, env{})
+	okSchedule(f)
+	writeConfig(t, s, "targets:\n  a: {driver: sqlite, paths: {a: "+db+"}, tls: {ca: /certs/ca.pem}}\n")
+	if code := s.Run(context.Background()); code != 1 {
+		t.Errorf("exit = %d, want 1: tls.ca must reach the driver, which rejects it for sqlite", code)
+	}
+}
+
+func TestSupercronicRunsAgainstTheSnapshot(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "a")
+	s, f, _, _ := newStartup(t, env{})
+	okSchedule(f)
+	var gotEnv []string
+	s.Exec = func(_ string, _, env []string) error { gotEnv = env; return nil }
+	writeConfig(t, s, "targets:\n  a: {driver: sqlite, paths: {a: "+db+"}}\n")
+	if code := s.Run(context.Background()); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(strings.Join(gotEnv, "\n"), "CONFIG_FILE="+s.Snapshot) {
+		t.Errorf("env = %v", gotEnv)
 	}
 }

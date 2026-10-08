@@ -27,9 +27,9 @@ func TestPostgresValidate(t *testing.T) {
 		kv   []string
 		want string
 	}{
-		{[]string{"DRIVER", "postgres", "DB_USER", "u", "DATABASES", "a"}, "DB_HOST is required"},
-		{[]string{"DRIVER", "postgres", "DB_HOST", "h", "DB_USER", "u", "DATABASES", "a"}, "DB_PASSWORD or DB_PASSWORD_FILE is required"},
-		{[]string{"DRIVER", "postgres", "DB_HOST", "h", "DB_USER", "u", "DB_PASSWORD", "x", "DATABASES", " , "}, "DATABASES lists no databases"},
+		{[]string{"DRIVER", "postgres", "DB_USER", "u", "DATABASES", "a"}, "host is required"},
+		{[]string{"DRIVER", "postgres", "DB_HOST", "h", "DB_USER", "u", "DATABASES", "a"}, "password_env or password_file is required"},
+		{[]string{"DRIVER", "postgres", "DB_HOST", "h", "DB_USER", "u", "DB_PASSWORD", "x", "DATABASES", " , "}, "databases lists no databases"},
 	}
 	for _, c := range cases {
 		err := newPostgres(testConfig(t, c.kv...), &proc.Fake{}).Validate()

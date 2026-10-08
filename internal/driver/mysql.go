@@ -49,7 +49,7 @@ func (m *mysql) Validate() error {
 		return err
 	}
 	if password == "" {
-		return errors.New("DB_PASSWORD or DB_PASSWORD_FILE is required")
+		return errors.New("password_env or password_file is required")
 	}
 	port := m.cfg.Get("DB_PORT")
 	if port == "" {
@@ -71,7 +71,7 @@ func (m *mysql) Validate() error {
 	}
 	m.dbs = config.SplitList(m.cfg.Get("DATABASES"))
 	if len(m.dbs) == 0 {
-		return errors.New("DATABASES lists no databases")
+		return errors.New("databases lists no databases")
 	}
 	return nil
 }
