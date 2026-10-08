@@ -44,7 +44,7 @@ func (p *postgres) Validate() error {
 		return err
 	}
 	if password == "" {
-		return errors.New("DB_PASSWORD or DB_PASSWORD_FILE is required")
+		return errors.New("password_env or password_file is required")
 	}
 	port := p.cfg.Get("DB_PORT")
 	if port == "" {
@@ -55,7 +55,7 @@ func (p *postgres) Validate() error {
 		return err
 	}
 	if fingerprint != "" {
-		return errors.New("DB_SSL_FINGERPRINT is only supported for mysql")
+		return errors.New("tls.fingerprint is only supported for mysql")
 	}
 	p.env = append(proc.BaseEnv(), "PGHOST="+p.cfg.Get("DB_HOST"), "PGPORT="+port, "PGUSER="+p.cfg.Get("DB_USER"), "PGPASSWORD="+password)
 	if ca != "" {
@@ -63,7 +63,7 @@ func (p *postgres) Validate() error {
 	}
 	p.dbs = config.SplitList(p.cfg.Get("DATABASES"))
 	if len(p.dbs) == 0 {
-		return errors.New("DATABASES lists no databases")
+		return errors.New("databases lists no databases")
 	}
 	return nil
 }

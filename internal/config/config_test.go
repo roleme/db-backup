@@ -30,8 +30,8 @@ func TestFromVarsErrors(t *testing.T) {
 		kv   []string
 		want string
 	}{
-		{[]string{}, "DRIVER is required"},
-		{[]string{"DRIVER", "oracle"}, "DRIVER must be postgres, mysql or sqlite (got 'oracle')"},
+		{[]string{}, "driver is required"},
+		{[]string{"DRIVER", "oracle"}, "driver must be postgres, mysql or sqlite (got 'oracle')"},
 		{[]string{"DRIVER", "sqlite", "KEEP_MINS", "0"}, "KEEP_MINS must be a positive integer"},
 		{[]string{"DRIVER", "sqlite", "KEEP_DAYS", "abc"}, "KEEP_DAYS must be a non-negative integer"},
 		{[]string{"DRIVER", "sqlite", "GZIP_LEVEL", "10"}, "GZIP_LEVEL must be between 1 and 9"},
@@ -69,13 +69,13 @@ func TestSplitList(t *testing.T) {
 
 func TestCheckSchedule(t *testing.T) {
 	for _, ok := range []string{"@daily", "20 1 * * *", "*/5 * * * * *", "0 0 3 * * * 2026"} {
-		if err := CheckSchedule("target a", "SCHEDULE", ok); err != nil {
+		if err := checkSchedule("schedule", ok); err != nil {
 			t.Errorf("%q rejected: %v", ok, err)
 		}
 	}
 	for _, bad := range []string{"", "daily", "* * *", "0 1 * * *; touch /x"} {
-		err := CheckSchedule("target a", "SCHEDULE", bad)
-		if err == nil || !strings.Contains(err.Error(), "target a: invalid schedule in SCHEDULE: "+bad) {
+		err := checkSchedule("schedule", bad)
+		if err == nil || !strings.Contains(err.Error(), "invalid schedule in schedule: "+bad) {
 			t.Errorf("%q: error = %v", bad, err)
 		}
 	}

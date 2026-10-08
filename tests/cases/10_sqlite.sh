@@ -12,7 +12,7 @@ test_sqlite_requires_paths() {
   bk=$(new_volume sqlreq_bk)
   out=$(dbb "$bk" -e DRIVER=sqlite -- check 2>&1) || rc=$?
   assert_eq "$rc" 1 "check without SQLITE_PATHS"
-  assert_contains "$out" "SQLITE_PATHS is required" "message"
+  assert_contains "$out" "paths is required" "message"
   pass "sqlite requires SQLITE_PATHS"
 }
 
@@ -121,7 +121,7 @@ test_sqlite_no_targets() {
   bk=$(new_volume notargets_bk)
   out=$(dbb "$bk" -e DRIVER=sqlite -e SQLITE_PATHS=, -- check 2>&1) || rc=$?
   assert_eq "$rc" 1 "empty SQLITE_PATHS exit code"
-  assert_contains "$out" "SQLITE_PATHS lists no files" "empty SQLITE_PATHS message"
+  assert_contains "$out" "paths lists no files" "empty SQLITE_PATHS message"
   pass "sqlite no targets"
 }
 

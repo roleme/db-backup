@@ -24,7 +24,7 @@ cleanup() {
   docker ps -aq --filter "name=dbbtest_" | xargs docker rm -f > /dev/null 2>&1 || true
   docker volume ls -q --filter "name=dbbtest_" | xargs docker volume rm -f > /dev/null 2>&1 || true
   rm -f "${TMPDIR:-/tmp}/dbbtest_pw_$$"
-  rm -rf "${TMPDIR:-/tmp}/dbbtest_targets_$$" "${TMPDIR:-/tmp}/dbbtest_stub_$$" "${TMPDIR:-/tmp}/dbbtest_tls_$$"
+  rm -rf "${TMPDIR:-/tmp}/dbbtest_config_$$" "${TMPDIR:-/tmp}/dbbtest_stub_$$" "${TMPDIR:-/tmp}/dbbtest_tls_$$"
 }
 
 fail() {
@@ -106,15 +106,17 @@ mysql_seed() {
   compose exec -T -e MYSQL_PWD=rootpw mysql mysql -uroot
 }
 
-TARGETS_HOST=${TMPDIR:-/tmp}/dbbtest_targets_$$
+CONFIG_BASE=${TMPDIR:-/tmp}/dbbtest_config_$$
+CONFIG_SEQ=0
 
-reset_targets() {
-  mkdir -p "$TARGETS_HOST"
-  rm -f "$TARGETS_HOST"/*.env
+reset_config() {
+  CONFIG_SEQ=$((CONFIG_SEQ + 1))
+  CONFIG_HOST=$CONFIG_BASE/$CONFIG_SEQ
+  mkdir -p "$CONFIG_HOST"
 }
 
-write_target() {
-  cat > "$TARGETS_HOST/$1.env"
+write_config() {
+  cat > "$CONFIG_HOST/config.yaml"
 }
 
 dbbr() {
@@ -125,7 +127,7 @@ dbbr() {
     shift
   done
   shift
-  docker run --rm --network "$NETWORK" -v "$vol:/backups" -v "$TARGETS_HOST:/config/targets.d:ro" \
+  docker run --rm --network "$NETWORK" -v "$vol:/backups" -v "$CONFIG_HOST:/config:ro" \
     --entrypoint db-backup-run ${flags[@]+"${flags[@]}"} "$IMAGE" "$@"
 }
 

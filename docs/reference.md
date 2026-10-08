@@ -6,9 +6,7 @@ Dumps are plain `pg_dump`, `mariadb-dump` and `sqlite3` output, so they restore 
 
 ## How it runs
 
-One container can serve many databases ("central mode"), or one container can serve one database ("single-target mode").
-
-Central mode reads one env file per target from `/config/targets.d` (`/config/targets.d/<name>.env`). When that directory holds no `*.env` files, the container runs in single-target mode, configured by plain environment variables with the same names (`DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD` or `DB_PASSWORD_FILE`, `DATABASES`, `HC_PING_URL`, and so on). Single-target mode has no `*_ENV` indirection, no `TIMEOUT` and no lock; the sections below that mention them describe central mode.
+One container serves any number of databases. Each is a target in one YAML file, `/config/config.yaml`, mounted as the directory `/config` (mount the directory, not the file: a file replaced by a `git pull` keeps its old content inside a single-file bind mount).
 
 ```yaml
 services:
@@ -23,61 +21,62 @@ services:
       APP_PING_URL: ${APP_PING_URL}
       APP_VERIFY_PING_URL: ${APP_VERIFY_PING_URL}
     volumes:
-      - ./targets.d:/config/targets.d:ro
+      - ./config:/config:ro
       - /srv/db-backups:/backups
       - /srv/apps/notes/data:/src/notes
 ```
 
-`/config/targets.d/app.env`:
+`/config/config.yaml`:
 
+```yaml
+targets:
+  app:
+    driver: postgres
+    host: app-postgres
+    user: backup
+    password_env: APP_DB_PASSWORD
+    databases: [app]
+    schedule: "20 1 * * *"
+    verify_schedule: "0 5 * * 0"
+    ping_url_env: APP_PING_URL
+    verify_ping_url_env: APP_VERIFY_PING_URL
+  notes:
+    driver: sqlite
+    paths:
+      notes: /src/notes/notes.db
 ```
-DRIVER=postgres
-DB_HOST=app-postgres
-DB_USER=backup
-DB_PASSWORD_ENV=APP_DB_PASSWORD
-DATABASES=app
-SCHEDULE=20 1 * * *
-VERIFY_SCHEDULE=0 5 * * 0
-HC_PING_URL_ENV=APP_PING_URL
-HC_VERIFY_PING_URL_ENV=APP_VERIFY_PING_URL
-```
 
-`/config/targets.d/notes.env`:
+## Target fields
 
-```
-DRIVER=sqlite
-SQLITE_PATHS=/src/notes/notes.db
-```
+The file is parsed, not executed. The only top-level key is `targets`, a mapping of target name to settings; the name is letters, digits, `_` and `-`, starting with a letter or digit. Any unknown field is an error, so a typo cannot be silently ignored. Cron schedules and anything else YAML could read as a different type must be quoted. There is deliberately no plain password field: `password_env` names an environment variable of the container, and its value is passed to the target's process only. Each target runs in a clean environment holding only its own values.
 
-## Target keys
-
-Target files are parsed, not executed. Blank lines and lines starting with `#` are ignored. Any other key is an error, so a typo cannot be silently ignored. There is deliberately no plain `DB_PASSWORD` key: a key ending in `_ENV` names an environment variable of the container, and that value is passed to the target's process under the key without `_ENV`. Each target runs in a clean environment holding only its own values.
-
-| Key | Meaning |
+| Field | Meaning |
 |---|---|
-| `DRIVER` | `postgres`, `mysql` or `sqlite` (required) |
-| `DB_HOST`, `DB_PORT`, `DB_USER` | connection (postgres and mysql) |
-| `DB_PASSWORD_ENV` / `DB_PASSWORD_FILE` | the variable that holds the password, or a file that holds it |
-| `DB_SSL_CA` | postgres and mysql: a PEM file with the CA that signed the server certificate; the connection then requires TLS and verifies the certificate chain and the host name (`sslmode=verify-full` for PostgreSQL, `--ssl-verify-server-cert` for MySQL) |
-| `DB_SSL_FINGERPRINT` | mysql only: pin the server certificate by its SHA-256 (or SHA-1) fingerprint, for a server whose certificate carries no matching host name, such as MySQL's auto-generated one; get it with `openssl x509 -in server-cert.pem -noout -fingerprint -sha256`. Set at most one of the two |
-| `DATABASES` | comma-separated database names (postgres, mysql) |
-| `SQLITE_PATHS` | comma-separated database files; the file name without its extension names the dump, or write `name=path` to choose the name (needed when two files share a name, such as two `db.sqlite3`); a name is letters, digits, `_` and `-` |
-| `EXTRA_PATHS` | comma-separated directories archived as `<name>-<stamp>.tar.gz` beside the dumps |
-| `EXTRA_OPTS` | extra flags for `pg_dump` / `mariadb-dump`; compression is `GZIP_LEVEL`, so no `-Z` |
-| `EXCLUDE_TABLE_DATA` | comma-separated tables whose rows are skipped; their schema is kept |
-| `SCHEDULE`, `VERIFY_SCHEDULE` | cron expressions (a seconds field is accepted); the defaults are `@daily` and no verification |
-| `HC_PING_URL`, `HC_VERIFY_PING_URL` (or `*_ENV`) | pinged after a successful run; `/fail` is appended on failure or timeout |
-| `KEEP_MINS`, `KEEP_DAYS`, `KEEP_WEEKS`, `KEEP_MONTHS` | retention per tier, defaults 1440, 7, 4, 6 |
-| `GZIP_LEVEL` | 1 to 9, default 6 |
-| `TIMEOUT` | seconds before a run is killed, default 3600 |
+| `driver` | `postgres`, `mysql` or `sqlite` (required) |
+| `host`, `port`, `user` | connection (postgres and mysql) |
+| `password_env` / `password_file` | the variable that holds the password, or a file that holds it. Set at most one |
+| `tls.ca` | postgres and mysql: a PEM file with the CA that signed the server certificate; the connection then requires TLS and verifies the certificate chain and the host name (`sslmode=verify-full` for PostgreSQL, `--ssl-verify-server-cert` for MySQL) |
+| `tls.fingerprint` | mysql only: pin the server certificate by its SHA-256 (or SHA-1) fingerprint, for a server whose certificate carries no matching host name, such as MySQL's auto-generated one; get it with `openssl x509 -in server-cert.pem -noout -fingerprint -sha256`. Set at most one of the two `tls` fields |
+| `databases` | list of database names (postgres, mysql) |
+| `paths` | sqlite: a map of dump name to database file, for example `notes: /src/notes/notes.db`; a name is letters, digits, `_` and `-`, so two files called `db.sqlite3` get two names |
+| `extra_paths` | list of directories archived as `<name>-<stamp>.tar.gz` beside the dumps |
+| `extra_opts` | list of extra flags for `pg_dump` / `mariadb-dump`, one flag or value per item; compression is `gzip_level`, so no `-Z` |
+| `exclude_table_data` | list of tables whose rows are skipped; their schema is kept |
+| `schedule`, `verify_schedule` | cron expressions (a seconds field is accepted); the defaults are `@daily` and no verification |
+| `ping_url`, `verify_ping_url` (or `ping_url_env`, `verify_ping_url_env`) | pinged after a successful run; `/fail` is appended on failure or timeout. Each pair takes at most one |
+| `keep.mins`, `keep.days`, `keep.weeks`, `keep.months` | retention per tier, defaults 1440, 7, 4, 6 |
+| `gzip_level` | 1 to 9, default 6 |
+| `timeout` | seconds before a run is killed, default 3600 |
+
+List items must not contain a comma or a line break, and `extra_opts` items must not contain whitespace.
 
 Dump names are shared by all targets in `/backups`, so they must be unique across targets. The container refuses to start when two targets would write the same dump name.
 
-Target files are read once, when the container starts: it validates every target, builds the crontab and keeps its own copy of each file, so editing a file in a running container changes nothing until the container is restarted. A target that fails validation (unknown key, a key set both directly and as `*_ENV`, an invalid name or schedule, a schedule the scheduler rejects, an unset environment variable) is skipped: the reason is logged, its ping URL receives `/fail` when it can be read, and the container reports itself unhealthy while the other targets keep running. Two targets that would write the same dump name stop the container, and so does having no valid target at all. `BACKUP_ON_START=TRUE` runs every target once at start. Every target defaults to `@daily` and the runs start together at midnight, so give targets their own `SCHEDULE` to stagger them. Schedules are cron expressions of 5 to 7 fields, or an `@` shortcut.
+The file is read once, when the container starts: it validates every target, builds the crontab and keeps its own copy of the file, so editing it in a running container changes nothing until the container is restarted. A target that fails validation (unknown field, both fields of a pair set, an invalid name or schedule, a schedule the scheduler rejects, an unset environment variable) is skipped: the reason is logged, its ping URL receives `/fail` when it can be read, and the container reports itself unhealthy while the other targets keep running. A file that cannot be read or parsed, two targets that would write the same dump name, and having no valid target at all stop the container. `BACKUP_ON_START=TRUE` runs every target once at start. Every target defaults to `@daily` and the runs start together at midnight, so give targets their own `schedule` to stagger them. Schedules are cron expressions of 5 to 7 fields, or an `@` shortcut. `CONFIG_FILE` overrides the path `/config/config.yaml`.
 
 ## Reaching the databases
 
-The container must be able to open a connection to each database server. In Docker the usual way is a network shared with the database container. Prefer one network per database, marked `internal`, with this container attached to all of them: each database then sees only this container, and nothing on those networks has outbound access. Use the database container's name as `DB_HOST`; service names such as `db` or `postgres` repeat between projects and collide on a shared network.
+The container must be able to open a connection to each database server. In Docker the usual way is a network shared with the database container. Prefer one network per database, marked `internal`, with this container attached to all of them: each database then sees only this container, and nothing on those networks has outbound access. Use the database container's name as `host`; service names such as `db` or `postgres` repeat between projects and collide on a shared network.
 
 ## Database users
 
@@ -95,7 +94,7 @@ Give the backup its own user per database.
 
 ## Excluding table rows
 
-`EXCLUDE_TABLE_DATA=table1,table2` keeps each table's schema and skips its rows, for tables such as execution logs or history. A restore brings those tables back empty. PostgreSQL uses `--exclude-table-data`; MySQL uses `--ignore-table-data=<db>.<table>`; for SQLite the rows are deleted in the dump copy with the table's triggers suspended, so no other table is altered. For SQLite and MySQL, verification then fails if the exclusion left child rows whose parent rows are gone.
+`exclude_table_data: [table1, table2]` keeps each table's schema and skips its rows, for tables such as execution logs or history. A restore brings those tables back empty. PostgreSQL uses `--exclude-table-data`; MySQL uses `--ignore-table-data=<db>.<table>`; for SQLite the rows are deleted in the dump copy with the table's triggers suspended, so no other table is altered. For SQLite and MySQL, verification then fails if the exclusion left child rows whose parent rows are gone.
 
 ## Output
 
@@ -106,11 +105,11 @@ Give the backup its own user per database.
 /backups/last/<file>.tables           table count of that dump
 ```
 
-The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times: `last` drops files older than `KEEP_MINS` minutes, `daily` files stamped before today minus `KEEP_DAYS` days, `weekly` ISO weeks that started more than `KEEP_WEEKS` weeks before the start of this week, and `monthly` months that started before the first of this month minus `KEEP_MONTHS` months. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
+The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times: `last` drops files older than `keep.mins` minutes, `daily` files stamped before today minus `keep.days` days, `weekly` ISO weeks that started more than `keep.weeks` weeks before the start of this week, and `monthly` months that started before the first of this month minus `keep.months` months. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
 
 ## Verification
 
-`VERIFY_SCHEDULE` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires the same table count as the dump. A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum.
+`verify_schedule` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires the same table count as the dump. A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum.
 
 ## Alerting
 
@@ -127,7 +126,7 @@ tar -xzf data-latest.tar.gz                           # extra paths
 
 ## Limits
 
-A run is killed after `TIMEOUT` seconds and pings `/fail`. In central mode, runs of the same target (backup and verify) are serialised with a lock and different targets run concurrently. A restart interrupts any dump in progress; the next run of that target removes its own temporary files older than an hour.
+A run is killed after `timeout` seconds and pings `/fail`. In central mode, runs of the same target (backup and verify) are serialised with a lock and different targets run concurrently. A restart interrupts any dump in progress; the next run of that target removes its own temporary files older than an hour.
 
 ## Security
 
@@ -150,8 +149,8 @@ A run is killed after `TIMEOUT` seconds and pings `/fail`. In central mode, runs
   ```
 
 - **No ports are opened.** The container only makes outbound connections: to the databases, and to the ping URLs.
-- **Secrets.** Passwords are given as the name of an environment variable (or a file), never inside a target file, and each target runs in a clean environment holding only its own values. A target file can still name any variable of the container, so treat the targets directory as trusted configuration. The dumps contain your data; protect the backup directory accordingly.
-- **Server certificates are not verified by default.** MySQL's default certificate is self-signed and carries no host name, and PostgreSQL uses TLS only when the server offers it. Keep database traffic on a private network, or set `DB_SSL_CA` (a CA that signed a certificate for the host name you connect to) or, for MySQL, `DB_SSL_FINGERPRINT`.
+- **Secrets.** Passwords are given as the name of an environment variable (or a file), never inside the config file, and each target runs in a clean environment holding only its own values. The config file can still name any variable of the container, so treat the config directory as trusted configuration. The dumps contain your data; protect the backup directory accordingly.
+- **Server certificates are not verified by default.** MySQL's default certificate is self-signed and carries no host name, and PostgreSQL uses TLS only when the server offers it. Keep database traffic on a private network, or set `tls.ca` (a CA that signed a certificate for the host name you connect to) or, for MySQL, `tls.fingerprint`.
 - **The image** is scanned with Trivy in CI, which fails on any HIGH or CRITICAL vulnerability that has a fix, and it is rebuilt from scratch every week so that fixed packages arrive. Operating-system vulnerabilities that Debian has not fixed yet are not mitigated here.
 
 ## Image

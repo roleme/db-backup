@@ -47,8 +47,8 @@ func TestMySQLTLSErrors(t *testing.T) {
 		kv   []string
 		want string
 	}{
-		{[]string{"DB_SSL_CA", caFile(t), "DB_SSL_FINGERPRINT", "AA"}, "set only one of DB_SSL_CA and DB_SSL_FINGERPRINT"},
-		{[]string{"DB_SSL_CA", "/nope/ca.pem"}, "DB_SSL_CA /nope/ca.pem is not readable"},
+		{[]string{"DB_SSL_CA", caFile(t), "DB_SSL_FINGERPRINT", "AA"}, "set only one of tls.ca and tls.fingerprint"},
+		{[]string{"DB_SSL_CA", "/nope/ca.pem"}, "tls.ca /nope/ca.pem is not readable"},
 	}
 	for _, c := range cases {
 		err := newMySQL(testConfig(t, append(base, c.kv...)...), &proc.Fake{}).Validate()
@@ -77,8 +77,8 @@ func TestPostgresTLSErrors(t *testing.T) {
 		kv   []string
 		want string
 	}{
-		{[]string{"DB_SSL_FINGERPRINT", "AA"}, "DB_SSL_FINGERPRINT is only supported for mysql"},
-		{[]string{"DB_SSL_CA", "/nope/ca.pem"}, "DB_SSL_CA /nope/ca.pem is not readable"},
+		{[]string{"DB_SSL_FINGERPRINT", "AA"}, "tls.fingerprint is only supported for mysql"},
+		{[]string{"DB_SSL_CA", "/nope/ca.pem"}, "tls.ca /nope/ca.pem is not readable"},
 	}
 	for _, c := range cases {
 		err := newPostgres(testConfig(t, append(base, c.kv...)...), &proc.Fake{}).Validate()

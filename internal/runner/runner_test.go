@@ -21,15 +21,15 @@ func (r *recPinger) Ping(base, suffix string) { r.got = append(r.got, base+suffi
 
 func setup(t *testing.T, body string) (Runner, *proc.Fake, *recPinger) {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "one.env"), []byte(body), 0o600); err != nil {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("targets:\n  one: {"+body+"}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	f := &proc.Fake{}
 	p := &recPinger{}
 	env := map[string]string{"ONE_PW": "secret-one", "TWO_PW": "secret-two", "BACKUP_DIR": "/backups", "PATH": "/usr/bin"}
 	return Runner{
-		TargetsDir: dir,
+		ConfigFile: path,
 		LockDir:    t.TempDir(),
 		Getenv:     func(k string) string { return env[k] },
 		Exec:       f,
@@ -38,7 +38,7 @@ func setup(t *testing.T, body string) (Runner, *proc.Fake, *recPinger) {
 }
 
 func TestRunStartsDbBackupWithAnIsolatedEnvironment(t *testing.T) {
-	r, f, _ := setup(t, "DRIVER=sqlite\nDB_PASSWORD_ENV=ONE_PW\nTIMEOUT=5\n")
+	r, f, _ := setup(t, "driver: sqlite, password_env: ONE_PW, timeout: 5")
 	if code := r.Run(context.Background(), "one", "backup"); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
@@ -58,21 +58,21 @@ func TestRunStartsDbBackupWithAnIsolatedEnvironment(t *testing.T) {
 }
 
 func TestRunRejectsBadTargetsWithExitOne(t *testing.T) {
-	r, _, _ := setup(t, "DRIVER=sqlite\nSCHEDLE=@daily\n")
+	r, _, _ := setup(t, "driver: sqlite, schedle: x")
 	if code := r.Run(context.Background(), "one", "check"); code != 1 {
 		t.Errorf("exit = %d", code)
 	}
 	if code := r.Run(context.Background(), "bad/name", "check"); code != 1 {
 		t.Errorf("exit = %d", code)
 	}
-	r2, _, _ := setup(t, "DRIVER=sqlite\nDB_PASSWORD_ENV=NOT_SET\n")
+	r2, _, _ := setup(t, "driver: sqlite, password_env: NOT_SET")
 	if code := r2.Run(context.Background(), "one", "check"); code != 1 {
 		t.Errorf("exit = %d", code)
 	}
 }
 
 func TestRunPassesThroughTheChildExitCode(t *testing.T) {
-	r, f, _ := setup(t, "DRIVER=sqlite\n")
+	r, f, _ := setup(t, "driver: sqlite")
 	f.Handler = func(proc.Spec) error { return exitErr(t, 7) }
 	if code := r.Run(context.Background(), "one", "backup"); code != 7 {
 		t.Errorf("exit = %d, want 7", code)
@@ -80,7 +80,7 @@ func TestRunPassesThroughTheChildExitCode(t *testing.T) {
 }
 
 func TestRunTimeoutExits124AndPingsFail(t *testing.T) {
-	r, _, p := setup(t, "DRIVER=sqlite\nTIMEOUT=1\nHC_PING_URL=http://p/ok\nHC_VERIFY_PING_URL=http://p/v\n")
+	r, _, p := setup(t, "driver: sqlite, timeout: 1, ping_url: http://p/ok, verify_ping_url: http://p/v")
 	r.Exec = blockUntilCancelled{}
 	if code := r.Run(context.Background(), "one", "backup"); code != 124 {
 		t.Fatalf("exit = %d, want 124", code)
@@ -127,7 +127,7 @@ func (c *counting) Run(_ context.Context, _ proc.Spec) error {
 }
 
 func TestRunsOfOneTargetAreSerialised(t *testing.T) {
-	r, _, _ := setup(t, "DRIVER=sqlite\n")
+	r, _, _ := setup(t, "driver: sqlite")
 	c := &counting{}
 	r.Exec = c
 	var wg sync.WaitGroup

@@ -23,12 +23,12 @@ test_env_validation() {
   rc=0
   out=$(dbb "$bk" -- backup 2>&1) || rc=$?
   assert_eq "$rc" 1 "missing DRIVER exit code"
-  assert_contains "$out" "DRIVER is required" "missing DRIVER message"
+  assert_contains "$out" "driver is required" "missing DRIVER message"
 
   rc=0
   out=$(dbb "$bk" -e DRIVER=oracle -- backup 2>&1) || rc=$?
   assert_eq "$rc" 1 "unknown DRIVER exit code"
-  assert_contains "$out" "DRIVER must be postgres, mysql or sqlite" "unknown DRIVER message"
+  assert_contains "$out" "driver must be postgres, mysql or sqlite" "unknown DRIVER message"
 
   rc=0
   out=$(dbb "$bk" -e DRIVER=sqlite -e BACKUP_DIR=/nonexistent -- backup 2>&1) || rc=$?

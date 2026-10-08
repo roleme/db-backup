@@ -84,7 +84,7 @@ test_extra_paths_duplicate() {
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'mkdir -p /data/a/up /data/b/up; echo f > /data/a/up/f; echo g > /data/b/up/g'
   out=$(dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -e EXTRA_PATHS=/data/a/up,/data/b/up -- backup 2>&1) || rc=$?
   assert_eq "$rc" 1 "duplicate extra basenames exit code"
-  assert_contains "$out" "EXTRA_PATHS has two directories named up" "duplicate extra message"
+  assert_contains "$out" "extra_paths has two directories named up" "duplicate extra message"
   assert_eq "$(in_vol "$bk" 'ls -A /backups')" "" "nothing written when the config is invalid"
   pass "extra paths duplicate"
 }

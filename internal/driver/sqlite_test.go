@@ -22,9 +22,9 @@ func TestSQLiteValidate(t *testing.T) {
 		}
 	}
 	cases := []struct{ paths, want string }{
-		{"", "SQLITE_PATHS is required"},
-		{filepath.Join(dir, "missing.db"), "SQLITE_PATHS entry " + filepath.Join(dir, "missing.db") + " does not exist"},
-		{a + "," + b, "SQLITE_PATHS has two files named app"},
+		{"", "paths is required"},
+		{filepath.Join(dir, "missing.db"), "paths entry " + filepath.Join(dir, "missing.db") + " does not exist"},
+		{a + "," + b, "paths has two files named app"},
 	}
 	for _, c := range cases {
 		cfg := testConfig(t, "SQLITE_PATHS", c.paths)
@@ -99,10 +99,10 @@ func TestSQLiteNamedPaths(t *testing.T) {
 	}
 
 	cases := []struct{ paths, want string }{
-		{"a b=" + a, `SQLITE_PATHS entry "a b=` + a + `" has an invalid name`},
-		{"=" + a, `SQLITE_PATHS entry "=` + a + `" has an invalid name`},
-		{"one=" + a + ",one=" + b, "SQLITE_PATHS has two files named one"},
-		{"db=" + a + "," + b, "SQLITE_PATHS has two files named db"},
+		{"a b=" + a, `paths entry "a b=` + a + `" has an invalid name`},
+		{"=" + a, `paths entry "=` + a + `" has an invalid name`},
+		{"one=" + a + ",one=" + b, "paths has two files named one"},
+		{"db=" + a + "," + b, "paths has two files named db"},
 	}
 	for _, c := range cases {
 		err := newSQLite(testConfig(t, "SQLITE_PATHS", c.paths), &proc.Fake{}).Validate()
