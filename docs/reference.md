@@ -13,7 +13,7 @@ Central mode reads one env file per target from `/config/targets.d` (`/config/ta
 ```yaml
 services:
   db-backup:
-    image: ghcr.io/roleme/db-backup:latest
+    image: ghcr.io/roleme/db-backup:1.0.0
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

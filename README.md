@@ -13,7 +13,7 @@ Scheduled, restore-tested backups for PostgreSQL, MySQL and SQLite, in one small
 ```yaml
 services:
   db-backup:
-    image: ghcr.io/roleme/db-backup:latest
+    image: ghcr.io/roleme/db-backup:1.0.0
     restart: unless-stopped
     environment:
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
@@ -40,6 +40,10 @@ There is no plain password key: a key ending in `_ENV` names an environment vari
 
 With no target files the container runs a single database configured from plain environment variables (`DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DATABASES`, `HC_PING_URL`, ...). That mode has no `*_ENV` indirection, `TIMEOUT` or per-target lock.
 
+## Versions
+
+Images are tagged `X.Y.Z`, with `X.Y`, `X` and `latest` following the newest release. Pin `X.Y.Z`: a release tag is never moved. Releases are cut on demand, not on every merge.
+
 ## More
 
 [docs/reference.md](docs/reference.md) has every key, the database privileges to grant, how to reach the databases, excluding table rows, the output layout, verification, restoring, and the security notes (it runs as root by default; a hardening recipe is there).
@@ -48,6 +52,7 @@ With no target files the container runs a single database configured from plain 
 
 - `go test ./...` runs the Go unit tests; no Docker needed.
 - `tests/run.sh [filter]` builds the image and runs every `test_*` function whose name contains the filter, against real PostgreSQL, MySQL and SQLite containers. It needs Docker with Compose v2.
+- To release, run the `release` workflow from the Actions tab: choose patch, minor or major (the first release is 1.0.0), or give an explicit version. It builds, scans and tests the head of `main`, pushes the image, then creates the tag and the GitHub release.
 - Write the failing test first. Every behaviour here has one.
 - Lint with `gofmt`, `go vet`, `shellcheck --severity=warning` on the shell test files and `hadolint` on the `Dockerfile`.
 - No explanatory comments in code; put the reasoning in the commit message.

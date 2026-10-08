@@ -1,0 +1,23 @@
+name: image-scan
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.74.0
+
+      - name: Scan the latest release
+        run: trivy image --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 ghcr.io/roleme/db-backup:latest
