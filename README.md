@@ -13,7 +13,7 @@ Scheduled, restore-tested backups for PostgreSQL, MySQL and SQLite, in one small
 ```yaml
 services:
   db-backup:
-    image: ghcr.io/roleme/db-backup:1.0.0
+    image: ghcr.io/roleme/db-backup:0.0.1
     restart: unless-stopped
     environment:
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
@@ -52,7 +52,7 @@ Images are tagged `X.Y.Z`, with `X.Y`, `X` and `latest` following the newest rel
 
 - `go test ./...` runs the Go unit tests; no Docker needed.
 - `tests/run.sh [filter]` builds the image and runs every `test_*` function whose name contains the filter, against real PostgreSQL, MySQL and SQLite containers. It needs Docker with Compose v2.
-- To release, run the `release` workflow from the Actions tab: choose patch, minor or major (the first release is 1.0.0), or give an explicit version. It builds, scans and tests the head of `main`, pushes the image, then creates the tag and the GitHub release.
+- To release, run the `release` workflow from the Actions tab: choose patch, minor or major, or give an explicit version. It builds, scans and tests the head of `main`, pushes the image, then creates the tag and the GitHub release.
 - Write the failing test first. Every behaviour here has one.
 - Lint with `gofmt`, `go vet`, `shellcheck --severity=warning` on the shell test files and `hadolint` on the `Dockerfile`.
 - No explanatory comments in code; put the reasoning in the commit message.
