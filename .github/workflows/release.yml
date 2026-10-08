@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/roleme/db-backup
+  REGISTRY_IMAGE: ghcr.io/roleme/db-backup
 
 jobs:
   prepare:
@@ -144,7 +144,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ${{ env.IMAGE }}
+          images: ${{ env.REGISTRY_IMAGE }}
           flavor: |
             latest=false
           tags: |
@@ -197,5 +197,5 @@ jobs:
           {
             echo "Released $tag"
             echo
-            echo "Image: \`$IMAGE:$VERSION\`"
+            echo "Image: \`$REGISTRY_IMAGE:$VERSION\`"
           } >>"$GITHUB_STEP_SUMMARY"
