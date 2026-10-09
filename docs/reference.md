@@ -102,14 +102,13 @@ Give the backup its own user per database.
 /backups/last/<name>-<yyyymmdd-hhmmss>.<sql|db|tar>.gz
 /backups/daily/<name>-<yyyymmdd>...   weekly/ (ISO week)   monthly/ (yyyymm)
 /backups/<tier>/<name>-latest...      symlink to the newest file of the tier
-/backups/last/<file>.tables           table count of that dump
 ```
 
 The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times: `last` drops files older than `keep.mins` minutes, `daily` files stamped before today minus `keep.days` days, `weekly` ISO weeks that started more than `keep.weeks` weeks before the start of this week, and `monthly` months that started before the first of this month minus `keep.months` months. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
 
 ## Verification
 
-`verify_schedule` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires the same table count as the dump. A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum.
+`verify_schedule` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires at least one table in the restore (for SQLite also a clean `PRAGMA integrity_check`). A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum.
 
 ## Alerting
 

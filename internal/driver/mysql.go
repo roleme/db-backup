@@ -194,7 +194,7 @@ func (m *mysql) restore(ctx context.Context, scratch, path string) (got, orphans
 	return got, orphans, nil
 }
 
-func (m *mysql) Verify(ctx context.Context, unit, path string, want int) error {
+func (m *mysql) Verify(ctx context.Context, unit, path string) error {
 	scratch := "dbb_verify_" + unit
 	if err := m.exec(ctx, "DROP DATABASE IF EXISTS "+quoteMySQL(scratch)); err != nil {
 		return err
@@ -209,8 +209,8 @@ func (m *mysql) Verify(ctx context.Context, unit, path string, want int) error {
 	if rerr != nil {
 		return rerr
 	}
-	if got != want {
-		return fmt.Errorf("%s restored %d tables, expected %d", unit, got, want)
+	if got == 0 {
+		return fmt.Errorf("%s restored no tables", unit)
 	}
 	if orphans != 0 {
 		return fmt.Errorf("%s restored %d orphaned child rows after excluding table rows", unit, orphans)

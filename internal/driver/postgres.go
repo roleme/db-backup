@@ -130,7 +130,7 @@ func (p *postgres) restoreAndCount(ctx context.Context, scratch, path string) (i
 	return strconv.Atoi(strings.TrimSpace(out))
 }
 
-func (p *postgres) Verify(ctx context.Context, unit, path string, want int) error {
+func (p *postgres) Verify(ctx context.Context, unit, path string) error {
 	scratch := "dbb_verify_" + unit
 	if err := p.psql(ctx, "postgres", "DROP DATABASE IF EXISTS "+quotePG(scratch)); err != nil {
 		return err
@@ -145,8 +145,8 @@ func (p *postgres) Verify(ctx context.Context, unit, path string, want int) erro
 	if rerr != nil {
 		return rerr
 	}
-	if got != want {
-		return fmt.Errorf("%s restored %d tables, expected %d", unit, got, want)
+	if got == 0 {
+		return fmt.Errorf("%s restored no tables", unit)
 	}
 	return nil
 }

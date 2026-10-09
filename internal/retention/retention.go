@@ -61,7 +61,7 @@ func pattern(unit string, t Tier, suffix string) *regexp.Regexp {
 	case Daily:
 		digits = `\d{8}`
 	}
-	return regexp.MustCompile(`^` + regexp.QuoteMeta(unit) + `-(` + digits + `)` + regexp.QuoteMeta(suffix) + `(\.tables)?$`)
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(unit) + `-(` + digits + `)` + regexp.QuoteMeta(suffix) + `$`)
 }
 
 func Parse(t Tier, stamp string, loc *time.Location) (time.Time, error) {

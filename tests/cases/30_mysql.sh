@@ -15,7 +15,7 @@ test_mysql_backup_and_verify() {
   dbb "$bk" "${env[@]}" -e HC_PING_URL=http://mockping:8080/t_my -- backup > /dev/null \
     || fail "mysql backup failed"
   out=$(in_vol "$bk" 'cd /backups/last
-echo "tables:$(cat shop-[0-9]*.sql.gz.tables)"
+echo "tables:$(gunzip -c shop-latest.sql.gz | grep -c "^CREATE TABLE")"
 echo "posts:$(gunzip -c shop-latest.sql.gz | grep -c "CREATE TABLE .posts.")"')
   assert_contains "$out" "tables:2" "table count"
   assert_contains "$out" "posts:1" "posts table in dump"
@@ -96,7 +96,7 @@ test_mysql_exclude_table_data() {
   out=$(in_vol "$bk" 'cd /backups/last
 echo "schema:$(gunzip -c shop-latest.sql.gz | grep -c "CREATE TABLE .posts.")"
 echo "rows:$(gunzip -c shop-latest.sql.gz | grep -c "INSERT INTO .posts.")"
-echo "tables:$(cat shop-[0-9]*.sql.gz.tables)"')
+echo "tables:$(gunzip -c shop-latest.sql.gz | grep -c "^CREATE TABLE")"')
   assert_contains "$out" "schema:1" "the schema of the excluded table is kept"
   assert_contains "$out" "rows:0" "rows of the excluded table are gone"
   assert_contains "$out" "tables:2" "both tables are counted"

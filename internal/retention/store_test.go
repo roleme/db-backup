@@ -29,7 +29,7 @@ func TestPruneByStampAndUnit(t *testing.T) {
 	now := at("2026-10-07 12:00")
 	s := Store{Dir: dir, Policy: Policy{KeepMins: 1440, KeepDays: 7, KeepWeeks: 4, KeepMonths: 6}, Now: func() time.Time { return now }}
 	files := map[string][]string{
-		"last":    {"app-20261006-110000.db.gz", "app-20261006-110000.db.gz.tables", "app-20261006-130000.db.gz", "app-2-20200101-010000.db.gz", "app-2-20200101-010000.db.gz.tables"},
+		"last":    {"app-20261006-110000.db.gz", "app-20261006-130000.db.gz", "app-2-20200101-010000.db.gz"},
 		"daily":   {"app-20260929.db.gz", "app-20260930.db.gz", "app-2-20200101.db.gz", "app-extra-20200101.db.gz"},
 		"weekly":  {"app-202636.db.gz", "app-202637.db.gz", "app-2-202001.db.gz"},
 		"monthly": {"app-202603.db.gz", "app-202604.db.gz", "app-2-202001.db.gz"},
@@ -43,13 +43,13 @@ func TestPruneByStampAndUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	gone := map[string][]string{
-		"last":    {"app-20261006-110000.db.gz", "app-20261006-110000.db.gz.tables"},
+		"last":    {"app-20261006-110000.db.gz"},
 		"daily":   {"app-20260929.db.gz"},
 		"weekly":  {"app-202636.db.gz"},
 		"monthly": {"app-202603.db.gz"},
 	}
 	kept := map[string][]string{
-		"last":    {"app-20261006-130000.db.gz", "app-2-20200101-010000.db.gz", "app-2-20200101-010000.db.gz.tables"},
+		"last":    {"app-20261006-130000.db.gz", "app-2-20200101-010000.db.gz"},
 		"daily":   {"app-20260930.db.gz", "app-2-20200101.db.gz", "app-extra-20200101.db.gz"},
 		"weekly":  {"app-202637.db.gz", "app-2-202001.db.gz"},
 		"monthly": {"app-202604.db.gz", "app-2-202001.db.gz"},
@@ -104,7 +104,7 @@ func TestPruneWeekFiftyThree(t *testing.T) {
 	}
 }
 
-func TestSaveLinksAndSidecar(t *testing.T) {
+func TestSaveLinks(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	s := Store{Dir: dir, Policy: Policy{KeepMins: 1440, KeepDays: 7, KeepWeeks: 4, KeepMonths: 6}, Now: func() time.Time { return now }}
@@ -112,13 +112,12 @@ func TestSaveLinksAndSidecar(t *testing.T) {
 	if err := os.WriteFile(tmp, []byte("dump"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Save("app", ".db.gz", tmp, "3"); err != nil {
+	if err := s.Save("app", ".db.gz", tmp); err != nil {
 		t.Fatal(err)
 	}
 	last := filepath.Join(dir, "last", "app-20261007-120000.db.gz")
-	b, err := os.ReadFile(last + ".tables")
-	if err != nil || string(b) != "3\n" {
-		t.Fatalf("sidecar = %q, %v", b, err)
+	if _, err := os.Stat(last + ".tables"); err == nil {
+		t.Error("no table-count file must be written")
 	}
 	li, _ := os.Stat(last)
 	for tier, name := range map[string]string{"daily": "app-20261007.db.gz", "weekly": "app-202641.db.gz", "monthly": "app-202610.db.gz"} {
@@ -135,22 +134,6 @@ func TestSaveLinksAndSidecar(t *testing.T) {
 	}
 	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
 		t.Error("the temporary file must be moved away")
-	}
-}
-
-func TestSaveWithoutTablesWritesNoSidecar(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
-	s := Store{Dir: dir, Policy: Policy{KeepMins: 1440}, Now: func() time.Time { return now }}
-	tmp := filepath.Join(dir, ".keys.partial.1")
-	if err := os.WriteFile(tmp, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Save("keys", ".tar.gz", tmp, ""); err != nil {
-		t.Fatal(err)
-	}
-	if exists(dir, "last", "keys-20261007-120000.tar.gz.tables") {
-		t.Error("an archive has no table count")
 	}
 }
 

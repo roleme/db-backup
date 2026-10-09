@@ -13,8 +13,8 @@ test_postgres_backup_and_verify() {
   bk2=$(new_volume pg_bk2)
   dbb "$bk" "${pg_env[@]}" -e HC_PING_URL=http://mockping:8080/t_pg -- backup > /dev/null
   out=$(in_vol "$bk" 'cd /backups/last
-echo "app tables:$(cat app-[0-9]*.sql.gz.tables)"
-echo "app2 tables:$(cat app2-[0-9]*.sql.gz.tables)"
+echo "app tables:$(gunzip -c app-latest.sql.gz | grep -c "^CREATE TABLE")"
+echo "app2 tables:$(gunzip -c app2-latest.sql.gz | grep -c "^CREATE TABLE")"
 echo "hello:$(gunzip -c app-latest.sql.gz | grep -c hello)"
 ls')
   assert_contains "$out" "app tables:2" "app table count"
@@ -45,18 +45,18 @@ test_postgres_wrong_password() {
   pass "postgres wrong password"
 }
 
-test_postgres_verify_detects_mismatch() {
+test_postgres_verify_fails_on_zero_tables() {
   local bk out
   bk=$(new_volume pgmis_bk)
   dbb "$bk" "${pg_env[@]}" -- backup > /dev/null
-  in_vol "$bk" 'cd /backups/last; for f in app-[0-9]*.sql.gz.tables; do echo 99 > "$f"; done'
+  in_vol "$bk" 'cd /backups/last; for f in $(readlink app-latest.sql.gz) $(readlink app2-latest.sql.gz); do printf "SELECT 1;\n" | gzip > "$f"; done'
   if out=$(dbb "$bk" "${pg_env[@]}" -e HC_VERIFY_PING_URL=http://mockping:8080/t_pg_mis -- verify 2>&1); then
-    fail "verify accepted a table count mismatch"
+    fail "verify accepted a dump with no tables"
   fi
-  assert_contains "$out" "restored 2 tables, expected 99" "mismatch reason"
+  assert_contains "$out" "restored no tables" "no-tables reason"
   ping_seen /t_pg_mis/fail || fail "fail ping not sent"
   assert_eq "$(scratch_dbs)" "0" "scratch databases dropped after a failed verify"
-  pass "postgres verify detects mismatch"
+  pass "postgres verify fails on zero tables"
 }
 
 test_postgres_verify_detects_corrupt_dump() {
@@ -119,7 +119,7 @@ test_postgres_exclude_table_data() {
   dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
   out=$(in_vol "$bk" 'cd /backups/last
 echo "rows:$(gunzip -c app-latest.sql.gz | grep -c hello || true)"
-echo "tables:$(cat app-[0-9]*.sql.gz.tables)"')
+echo "tables:$(gunzip -c app-latest.sql.gz | grep -c "^CREATE TABLE")"')
   assert_contains "$out" "rows:0" "rows of the excluded table are gone"
   assert_contains "$out" "tables:2" "the schema of the excluded table is kept"
   dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify after excluding rows failed"

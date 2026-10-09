@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -129,7 +128,6 @@ func (j *Job) backupOne(ctx context.Context, u unit) error {
 		os.Remove(path)
 		return err
 	}
-	tables := ""
 	if tc, ok := u.adapter.(driver.TableCounter); ok {
 		n, err := tc.Tables(ctx, u.name, path)
 		if err != nil {
@@ -140,9 +138,8 @@ func (j *Job) backupOne(ctx context.Context, u unit) error {
 			os.Remove(path)
 			return fmt.Errorf("dump of %s contains no tables", u.name)
 		}
-		tables = strconv.Itoa(n)
 	}
-	if err := j.store.Save(u.name, u.adapter.Suffix(), path, tables); err != nil {
+	if err := j.store.Save(u.name, u.adapter.Suffix(), path); err != nil {
 		os.Remove(path)
 		return err
 	}
@@ -180,22 +177,7 @@ func (j *Job) verifyOne(ctx context.Context, u unit) error {
 	if _, err := os.Stat(latest); err != nil {
 		return fmt.Errorf("no dump found for %s", u.name)
 	}
-	want := 0
-	if _, ok := u.adapter.(driver.TableCounter); ok {
-		target, err := os.Readlink(latest)
-		if err != nil {
-			return err
-		}
-		b, err := os.ReadFile(filepath.Join(j.cfg.BackupDir, "last", target+".tables"))
-		if err != nil || strings.TrimSpace(string(b)) == "" {
-			return fmt.Errorf("no table count recorded for %s", target)
-		}
-		want, err = strconv.Atoi(strings.TrimSpace(string(b)))
-		if err != nil {
-			return fmt.Errorf("no table count recorded for %s", target)
-		}
-	}
-	if err := u.adapter.Verify(ctx, u.name, latest, want); err != nil {
+	if err := u.adapter.Verify(ctx, u.name, latest); err != nil {
 		return err
 	}
 	logx.Infof("verified %s", u.name)

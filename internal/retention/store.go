@@ -25,7 +25,7 @@ func replace(remove, create func() error) error {
 	return create()
 }
 
-func (s Store) Save(unit, suffix, tmp, tables string) error {
+func (s Store) Save(unit, suffix, tmp string) error {
 	at := s.Now()
 	for _, t := range Tiers {
 		if err := os.MkdirAll(s.tierDir(t), 0o755); err != nil {
@@ -35,11 +35,6 @@ func (s Store) Save(unit, suffix, tmp, tables string) error {
 	last := filepath.Join(s.tierDir(Last), FileName(unit, Last, at, suffix))
 	if err := os.Rename(tmp, last); err != nil {
 		return err
-	}
-	if tables != "" {
-		if err := os.WriteFile(last+".tables", []byte(tables+"\n"), 0o644); err != nil {
-			return err
-		}
 	}
 	for _, t := range []Tier{Daily, Weekly, Monthly} {
 		dst := filepath.Join(s.tierDir(t), FileName(unit, t, at, suffix))

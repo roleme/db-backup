@@ -62,6 +62,32 @@ func sqliteFake(tables string) *proc.Fake {
 	}}
 }
 
+func sqliteFakeCounts(counts ...string) *proc.Fake {
+	i := 0
+	return &proc.Fake{Handler: func(s proc.Spec) error {
+		joined := strings.Join(s.Args, " ")
+		switch {
+		case strings.Contains(joined, "VACUUM INTO"):
+			for _, a := range s.Args {
+				if strings.HasPrefix(a, "VACUUM INTO '") {
+					p := strings.TrimSuffix(strings.TrimPrefix(a, "VACUUM INTO '"), "'")
+					return os.WriteFile(p, []byte("sqlite-bytes"), 0o600)
+				}
+			}
+		case strings.Contains(joined, "select count(*)") && s.Stdout != nil:
+			n := counts[len(counts)-1]
+			if i < len(counts) {
+				n = counts[i]
+			}
+			i++
+			_, _ = io.WriteString(s.Stdout, n+"\n")
+		case strings.Contains(joined, "integrity_check") && s.Stdout != nil:
+			_, _ = io.WriteString(s.Stdout, "ok\n")
+		}
+		return nil
+	}}
+}
+
 func TestBackupStoresPingsAndSkipsTiersCorrectly(t *testing.T) {
 	j, pg, bk := newJob(t, sqliteFake("3"))
 	if err := j.Backup(context.Background()); err != nil {
@@ -70,14 +96,14 @@ func TestBackupStoresPingsAndSkipsTiersCorrectly(t *testing.T) {
 	if strings.Join(pg.got, ",") != "http://p/ok" {
 		t.Errorf("pings = %v", pg.got)
 	}
-	for _, p := range []string{"last/app-20261007-120000.db.gz", "last/app-20261007-120000.db.gz.tables", "daily/app-20261007.db.gz", "last/app-latest.db.gz"} {
+	for _, p := range []string{"last/app-20261007-120000.db.gz", "daily/app-20261007.db.gz", "last/app-latest.db.gz"} {
 		if _, err := os.Lstat(filepath.Join(bk, p)); err != nil {
 			t.Errorf("missing %s: %v", p, err)
 		}
 	}
-	b, _ := os.ReadFile(filepath.Join(bk, "last", "app-20261007-120000.db.gz.tables"))
-	if string(b) != "3\n" {
-		t.Errorf("sidecar = %q", b)
+	sidecars, _ := filepath.Glob(filepath.Join(bk, "*", "*.tables"))
+	if len(sidecars) != 0 {
+		t.Errorf("no table-count file must be written: %v", sidecars)
 	}
 	left, _ := filepath.Glob(filepath.Join(bk, ".*.partial.*"))
 	if len(left) != 0 {
@@ -103,20 +129,28 @@ func TestBackupRejectsADumpWithNoTables(t *testing.T) {
 	}
 }
 
-func TestVerifyNeedsARecordedTableCount(t *testing.T) {
-	j, pg, bk := newJob(t, sqliteFake("3"))
+func TestVerifyFailsWhenTheRestoredDumpHasNoTables(t *testing.T) {
+	j, pg, _ := newJob(t, sqliteFakeCounts("3", "0"))
 	if err := j.Backup(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	pg.got = nil
-	if err := os.Remove(filepath.Join(bk, "last", "app-20261007-120000.db.gz.tables")); err != nil {
-		t.Fatal(err)
-	}
 	if err := j.Verify(context.Background()); err == nil {
-		t.Fatal("verify must fail without the recorded table count")
+		t.Fatal("verify must fail when nothing was restored")
 	}
 	if strings.Join(pg.got, ",") != "http://p/v/fail" {
 		t.Errorf("pings = %v", pg.got)
+	}
+}
+
+func TestVerifyAcceptsADumpWhoseTableCountDiffersFromBackupTime(t *testing.T) {
+	j, pg, _ := newJob(t, sqliteFakeCounts("3", "5"))
+	if err := j.Backup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	pg.got = nil
+	if err := j.Verify(context.Background()); err != nil {
+		t.Fatalf("verify compares nothing to a recorded count any more: %v", err)
 	}
 }
 

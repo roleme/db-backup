@@ -26,14 +26,14 @@ test_sqlite_backup_layout() {
   out=$(in_vol "$bk" 'cd /backups
 for d in last daily weekly monthly; do test -L $d/app-latest.db.gz && echo "latest:$d"; done
 echo "links:$(find last -name "app-[0-9]*.db.gz" -printf "%n")"
-echo "tables:$(cat last/app-[0-9]*.db.gz.tables)"
+echo "sidecars:$(find /backups -name "*.tables" | wc -l)"
 gunzip -c last/app-latest.db.gz > /tmp/x.db
 echo "rows:$(sqlite3 /tmp/x.db "select count(*) from notes")"')
   for d in last daily weekly monthly; do
     assert_contains "$out" "latest:$d" "latest symlink in $d"
   done
   assert_contains "$out" "links:4" "dump hardlinked into four tiers"
-  assert_contains "$out" "tables:2" "table count recorded"
+  assert_contains "$out" "sidecars:0" "no table-count file is written"
   assert_contains "$out" "rows:2" "dump content"
   ping_seen /t_layout || fail "success ping not sent"
   ! ping_seen /t_layout/fail || fail "fail ping sent on success"
@@ -177,7 +177,7 @@ test_sqlite_exclude_table_data() {
   out=$(in_vol "$bk" 'cd /backups/last
 gunzip -c app-latest.db.gz > /tmp/x.db
 echo "notes:$(sqlite3 /tmp/x.db "select count(*) from notes")"
-echo "tables:$(cat app-[0-9]*.db.gz.tables)"')
+echo "tables:$(sqlite3 /tmp/x.db "select count(*) from sqlite_master where type=\"table\"")"')
   assert_contains "$out" "notes:0" "rows of the excluded table are gone"
   assert_contains "$out" "tables:2" "the schema of the excluded table is kept"
   dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify after excluding rows failed"
@@ -239,11 +239,11 @@ test_prune_leaves_numeric_prefix_names() {
   bk=$(new_volume numpfx_bk)
   sqlite_data "$data"
   in_vol "$bk" 'cd /backups; mkdir -p last daily weekly monthly
-touch -d 2020-01-01 daily/app-2-20200101.db.gz weekly/app-2-202001.db.gz monthly/app-2-202001.db.gz last/app-2-20200101-010000.db.gz last/app-2-20200101-010000.db.gz.tables'
+touch -d 2020-01-01 daily/app-2-20200101.db.gz weekly/app-2-202001.db.gz monthly/app-2-202001.db.gz last/app-2-20200101-010000.db.gz'
   dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -- backup > /dev/null
   out=$(in_vol "$bk" 'cd /backups; ls last daily weekly monthly')
   assert_contains "$out" "app-2-20200101.db.gz" "another target's old daily is kept"
   assert_contains "$out" "app-2-202001.db.gz" "another target's old weekly and monthly are kept"
-  assert_contains "$out" "app-2-20200101-010000.db.gz.tables" "another target's table-count file is kept"
+  assert_contains "$out" "app-2-20200101-010000.db.gz" "another target's old last dump is kept"
   pass "prune leaves numeric prefix names"
 }

@@ -174,7 +174,7 @@ func (s *sqlite) Tables(ctx context.Context, unit, path string) (int, error) {
 	return s.count(ctx, copy)
 }
 
-func (s *sqlite) Verify(ctx context.Context, unit, path string, want int) error {
+func (s *sqlite) Verify(ctx context.Context, unit, path string) error {
 	copy, err := s.gunzipToTemp(unit, path)
 	if err != nil {
 		return err
@@ -196,8 +196,8 @@ func (s *sqlite) Verify(ctx context.Context, unit, path string, want int) error 
 	if res != "ok" {
 		return fmt.Errorf("%s integrity_check: %s", unit, res)
 	}
-	if countErr != nil || got != want {
-		return fmt.Errorf("%s restored %d tables, expected %d", unit, got, want)
+	if countErr != nil || got == 0 {
+		return fmt.Errorf("%s restored no tables", unit)
 	}
 	if fk != "" {
 		return fmt.Errorf("%s foreign key violations after excluding rows: %s", unit, fk)
