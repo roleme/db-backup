@@ -14,7 +14,7 @@ type Adapter interface {
 	Units() []string
 	Suffix() string
 	Dump(ctx context.Context, unit string, w io.Writer) error
-	Verify(ctx context.Context, unit, path string, wantTables int) error
+	Verify(ctx context.Context, unit, path string) error
 }
 
 type TableCounter interface {

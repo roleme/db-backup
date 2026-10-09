@@ -80,7 +80,7 @@ func TestPostgresVerifyQuotesTheScratchName(t *testing.T) {
 	}}
 	p := newTestPG(t, f)
 	path := writeGz(t, "CREATE TABLE a (x int);\nCREATE TABLE b (x int);\n")
-	if err := p.Verify(context.Background(), `we"ird`, path, 2); err != nil {
+	if err := p.Verify(context.Background(), `we"ird`, path); err != nil {
 		t.Fatal(err)
 	}
 	var sql []string
@@ -93,16 +93,16 @@ func TestPostgresVerifyQuotesTheScratchName(t *testing.T) {
 	}
 }
 
-func TestPostgresVerifyReportsTableMismatchAndStillDrops(t *testing.T) {
+func TestPostgresVerifyFailsOnZeroTablesAndStillDrops(t *testing.T) {
 	f := &proc.Fake{Handler: func(s proc.Spec) error {
 		if s.Stdout != nil && strings.Contains(strings.Join(s.Args, " "), "information_schema") {
-			_, _ = s.Stdout.Write([]byte("1\n"))
+			_, _ = s.Stdout.Write([]byte("0\n"))
 		}
 		return nil
 	}}
 	p := newTestPG(t, f)
-	err := p.Verify(context.Background(), "app", writeGz(t, "CREATE TABLE a (x int);\n"), 2)
-	if err == nil || !strings.Contains(err.Error(), "app restored 1 tables, expected 2") {
+	err := p.Verify(context.Background(), "app", writeGz(t, "SELECT 1;\n"))
+	if err == nil || !strings.Contains(err.Error(), "app restored no tables") {
 		t.Errorf("error = %v", err)
 	}
 	last := strings.Join(f.Calls[len(f.Calls)-1].Spec.Args, " ")

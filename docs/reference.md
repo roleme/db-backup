@@ -70,7 +70,7 @@ The file is parsed, not executed. The only top-level key is `targets`, a mapping
 
 List items must not contain a comma or a line break, and `extra_opts` items must not contain whitespace.
 
-Dump names are shared by all targets in `/backups`, so they must be unique across targets. The container refuses to start when two targets would write the same dump name.
+Dump names are shared by all targets in `/backups` and each one is a folder there, so they must be unique across targets. The container refuses to start when two targets would write the same dump name.
 
 The file is read once, when the container starts: it validates every target, builds the crontab and keeps its own copy of the file, so editing it in a running container changes nothing until the container is restarted. A target that fails validation (unknown field, both fields of a pair set, an invalid name or schedule, a schedule the scheduler rejects, an unset environment variable) is skipped: the reason is logged, its ping URL receives `/fail` when it can be read, and the container reports itself unhealthy while the other targets keep running. A file that cannot be read or parsed, two targets that would write the same dump name, and having no valid target at all stop the container. `BACKUP_ON_START=TRUE` runs every target once at start. Every target defaults to `@daily` and the runs start together at midnight, so give targets their own `schedule` to stagger them. Schedules are cron expressions of 5 to 7 fields, or an `@` shortcut. `CONFIG_FILE` overrides the path `/config/config.yaml`.
 
@@ -99,17 +99,16 @@ Give the backup its own user per database.
 ## Output
 
 ```
-/backups/last/<name>-<yyyymmdd-hhmmss>.<sql|db|tar>.gz
-/backups/daily/<name>-<yyyymmdd>...   weekly/ (ISO week)   monthly/ (yyyymm)
-/backups/<tier>/<name>-latest...      symlink to the newest file of the tier
-/backups/last/<file>.tables           table count of that dump
+/backups/<name>/latest.<sql|db|tar>.gz     symlink to the newest dump in last/
+/backups/<name>/last/<name>-<yyyymmdd-hhmmss>.<sql|db|tar>.gz
+/backups/<name>/daily/<name>-<yyyymmdd>...   weekly/ (ISO week)   monthly/ (yyyymm)
 ```
 
-The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times: `last` drops files older than `keep.mins` minutes, `daily` files stamped before today minus `keep.days` days, `weekly` ISO weeks that started more than `keep.weeks` weeks before the start of this week, and `monthly` months that started before the first of this month minus `keep.months` months. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
+Each database, SQLite file or extra path (`<name>`) has its own folder. The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times: `last` drops files older than `keep.mins` minutes, `daily` files stamped before today minus `keep.days` days, `weekly` ISO weeks that started more than `keep.weeks` weeks before the start of this week, and `monthly` months that started before the first of this month minus `keep.months` months. The period in progress counts in addition to the kept ones: `keep.days: 7` keeps today and the 7 days before it. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
 
 ## Verification
 
-`verify_schedule` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires the same table count as the dump. A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum.
+`verify_schedule` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires at least one table in the restore (for SQLite also a clean `PRAGMA integrity_check`). A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum.
 
 ## Alerting
 
@@ -118,10 +117,10 @@ Each target pings its own endpoint, so the absence of a ping is the alert for a 
 ## Restoring
 
 ```
-gunzip -c app-latest.sql.gz | psql -d newdb           # PostgreSQL, as the user who should own the objects
-gunzip -c shop-latest.sql.gz | mariadb newdb          # MySQL (strip DEFINER=`...`@`...` if the user lacks the privilege to set it)
-gunzip -c notes-latest.db.gz > notes.db               # SQLite: put it in place with the application stopped
-tar -xzf data-latest.tar.gz                           # extra paths
+gunzip -c app/latest.sql.gz | psql -d newdb           # PostgreSQL, as the user who should own the objects
+gunzip -c shop/latest.sql.gz | mariadb newdb          # MySQL (strip DEFINER=`...`@`...` if the user lacks the privilege to set it)
+gunzip -c notes/latest.db.gz > notes.db               # SQLite: put it in place with the application stopped
+tar -xzf data/latest.tar.gz                           # extra paths
 ```
 
 ## Limits

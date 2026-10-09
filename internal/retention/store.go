@@ -2,9 +2,11 @@ package retention
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -14,8 +16,23 @@ type Store struct {
 	Now    func() time.Time
 }
 
-func (s Store) tierDir(t Tier) string {
-	return filepath.Join(s.Dir, string(t))
+func checkUnit(unit string) error {
+	if unit == "" || unit == "." || unit == ".." || strings.ContainsRune(unit, filepath.Separator) {
+		return fmt.Errorf("unit name %q cannot be used as a directory", unit)
+	}
+	return nil
+}
+
+func (s Store) unitDir(unit string) string {
+	return filepath.Join(s.Dir, unit)
+}
+
+func (s Store) tierDir(unit string, t Tier) string {
+	return filepath.Join(s.unitDir(unit), string(t))
+}
+
+func (s Store) Latest(unit, suffix string) string {
+	return filepath.Join(s.unitDir(unit), LatestName(suffix))
 }
 
 func replace(remove, create func() error) error {
@@ -25,44 +42,40 @@ func replace(remove, create func() error) error {
 	return create()
 }
 
-func (s Store) Save(unit, suffix, tmp, tables string) error {
+func (s Store) Save(unit, suffix, tmp string) error {
+	if err := checkUnit(unit); err != nil {
+		return err
+	}
 	at := s.Now()
 	for _, t := range Tiers {
-		if err := os.MkdirAll(s.tierDir(t), 0o755); err != nil {
+		if err := os.MkdirAll(s.tierDir(unit, t), 0o755); err != nil {
 			return err
 		}
 	}
-	last := filepath.Join(s.tierDir(Last), FileName(unit, Last, at, suffix))
+	lastName := FileName(unit, Last, at, suffix)
+	last := filepath.Join(s.tierDir(unit, Last), lastName)
 	if err := os.Rename(tmp, last); err != nil {
 		return err
 	}
-	if tables != "" {
-		if err := os.WriteFile(last+".tables", []byte(tables+"\n"), 0o644); err != nil {
-			return err
-		}
-	}
 	for _, t := range []Tier{Daily, Weekly, Monthly} {
-		dst := filepath.Join(s.tierDir(t), FileName(unit, t, at, suffix))
+		dst := filepath.Join(s.tierDir(unit, t), FileName(unit, t, at, suffix))
 		err := replace(func() error { return os.Remove(dst) }, func() error { return os.Link(last, dst) })
 		if err != nil {
 			return err
 		}
 	}
-	for _, t := range Tiers {
-		target := FileName(unit, t, at, suffix)
-		link := filepath.Join(s.tierDir(t), LatestName(unit, suffix))
-		err := replace(func() error { return os.Remove(link) }, func() error { return os.Symlink(target, link) })
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	link := s.Latest(unit, suffix)
+	target := filepath.Join(string(Last), lastName)
+	return replace(func() error { return os.Remove(link) }, func() error { return os.Symlink(target, link) })
 }
 
 func (s Store) Prune(unit, suffix string) error {
+	if err := checkUnit(unit); err != nil {
+		return err
+	}
 	now := s.Now()
 	for _, t := range Tiers {
-		entries, err := os.ReadDir(s.tierDir(t))
+		entries, err := os.ReadDir(s.tierDir(unit, t))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
@@ -80,7 +93,7 @@ func (s Store) Prune(unit, suffix string) error {
 			if err != nil || !stamped.Before(cutoff) {
 				continue
 			}
-			if err := os.Remove(filepath.Join(s.tierDir(t), e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			if err := os.Remove(filepath.Join(s.tierDir(unit, t), e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err
 			}
 		}

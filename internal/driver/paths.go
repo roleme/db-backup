@@ -57,7 +57,7 @@ func (p *paths) Dump(ctx context.Context, unit string, w io.Writer) error {
 	})
 }
 
-func (p *paths) Verify(ctx context.Context, unit, path string, _ int) error {
+func (p *paths) Verify(ctx context.Context, unit, path string) error {
 	return p.run.Run(ctx, proc.Spec{
 		Name:   "tar",
 		Args:   []string{"-tzf", path},

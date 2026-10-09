@@ -54,7 +54,7 @@ func TestMySQLVerifyStripsDefinersAndQuotesNames(t *testing.T) {
 	}}
 	m := newTestMySQL(t, f)
 	long := "CREATE DEFINER=`root`@`%` TRIGGER t BEFORE INSERT ON a FOR EACH ROW SET NEW.x = 1;\nINSERT INTO a VALUES ('" + strings.Repeat("y", 3<<20) + "');\nCREATE TABLE a (x int);\n"
-	err := m.Verify(context.Background(), "sh`op", writeGz(t, long), 1)
+	err := m.Verify(context.Background(), "sh`op", writeGz(t, long))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestMySQLVerifyFailsOnOrphanedChildRows(t *testing.T) {
 		return nil
 	}}
 	m := newTestMySQL(t, f, "EXCLUDE_TABLE_DATA", "logs")
-	err := m.Verify(context.Background(), "shop", writeGz(t, "CREATE TABLE a (x int);\n"), 1)
+	err := m.Verify(context.Background(), "shop", writeGz(t, "CREATE TABLE a (x int);\n"))
 	if err == nil || !strings.Contains(err.Error(), "shop restored 2 orphaned child rows after excluding table rows") {
 		t.Errorf("error = %v", err)
 	}
@@ -102,13 +102,27 @@ func TestMySQLOrphanCheckRunsOnlyAfterExcludingRows(t *testing.T) {
 		return nil
 	}}
 	m := newTestMySQL(t, f)
-	if err := m.Verify(context.Background(), "shop", writeGz(t, "CREATE TABLE a (x int);\n"), 1); err != nil {
+	if err := m.Verify(context.Background(), "shop", writeGz(t, "CREATE TABLE a (x int);\n")); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range f.Calls {
 		if strings.Contains(strings.Join(c.Spec.Args, " "), "KEY_COLUMN_USAGE") {
 			t.Error("without excluded rows the orphan check must not run")
 		}
+	}
+}
+
+func TestMySQLVerifyFailsOnZeroTables(t *testing.T) {
+	f := &proc.Fake{Handler: func(s proc.Spec) error {
+		if s.Stdout != nil && strings.Contains(strings.Join(s.Args, " "), "information_schema.tables") {
+			_, _ = io.WriteString(s.Stdout, "0\n")
+		}
+		return nil
+	}}
+	m := newTestMySQL(t, f)
+	err := m.Verify(context.Background(), "shop", writeGz(t, "SELECT 1;\n"))
+	if err == nil || !strings.Contains(err.Error(), "shop restored no tables") {
+		t.Errorf("error = %v", err)
 	}
 }
 
