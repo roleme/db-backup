@@ -4,7 +4,7 @@ Scheduled, restore-tested backups for PostgreSQL, MySQL and SQLite, in one small
 
 - **Standard dumps.** Output is plain `pg_dump`, `mariadb-dump` and `sqlite3` output, so a dump restores with the stock tools and nothing from this project.
 - **Retention.** Keeps `last`, `daily`, `weekly` and `monthly` copies as hardlinks of one file, so keeping all four costs one copy.
-- **Restore test.** On a schedule it restores the newest dump into a scratch database and compares the table count. A dump that compresses fine but cannot be replayed is caught.
+- **Restore test.** On a schedule it restores the newest dump into a scratch database and requires at least one table (SQLite also gets an integrity check). A dump that compresses fine but cannot be replayed is caught.
 - **Alerting.** Pings a Healthchecks-style URL after each run, with `/fail` appended on failure. A ping error never fails a dump.
 - **One container, many databases.** Each database is one entry in a YAML file; targets run isolated from each other, with their own lock, timeout and ping.
 
