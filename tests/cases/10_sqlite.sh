@@ -17,7 +17,7 @@ test_sqlite_requires_paths() {
 }
 
 test_sqlite_backup_layout() {
-  local data bk out d
+  local data bk out
   data=$(new_volume layout_data)
   bk=$(new_volume layout_bk)
   sqlite_data "$data"
