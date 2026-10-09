@@ -96,12 +96,12 @@ func TestBackupStoresPingsAndSkipsTiersCorrectly(t *testing.T) {
 	if strings.Join(pg.got, ",") != "http://p/ok" {
 		t.Errorf("pings = %v", pg.got)
 	}
-	for _, p := range []string{"last/app-20261007-120000.db.gz", "daily/app-20261007.db.gz", "last/app-latest.db.gz"} {
+	for _, p := range []string{"app/last/app-20261007-120000.db.gz", "app/daily/app-20261007.db.gz", "app/latest.db.gz"} {
 		if _, err := os.Lstat(filepath.Join(bk, p)); err != nil {
 			t.Errorf("missing %s: %v", p, err)
 		}
 	}
-	sidecars, _ := filepath.Glob(filepath.Join(bk, "*", "*.tables"))
+	sidecars, _ := filepath.Glob(filepath.Join(bk, "*", "*", "*.tables"))
 	if len(sidecars) != 0 {
 		t.Errorf("no table-count file must be written: %v", sidecars)
 	}
@@ -120,12 +120,20 @@ func TestBackupRejectsADumpWithNoTables(t *testing.T) {
 	if strings.Join(pg.got, ",") != "http://p/ok/fail" {
 		t.Errorf("pings = %v", pg.got)
 	}
-	if _, err := os.Lstat(filepath.Join(bk, "last", "app-latest.db.gz")); err == nil {
+	if _, err := os.Lstat(filepath.Join(bk, "app", "latest.db.gz")); err == nil {
 		t.Error("a dump without tables must not be stored")
 	}
 	left, _ := filepath.Glob(filepath.Join(bk, ".app.partial.*"))
 	if len(left) != 0 {
 		t.Errorf("partial left: %v", left)
+	}
+}
+
+func TestVerifyFailsWithoutADump(t *testing.T) {
+	j, pg, _ := newJob(t, sqliteFake("3"))
+	err := j.Verify(context.Background())
+	if err == nil || strings.Join(pg.got, ",") != "http://p/v/fail" {
+		t.Errorf("err=%v pings=%v", err, pg.got)
 	}
 }
 

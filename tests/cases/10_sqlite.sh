@@ -24,14 +24,16 @@ test_sqlite_backup_layout() {
   dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db \
     -e HC_PING_URL=http://mockping:8080/t_layout -- backup > /dev/null
   out=$(in_vol "$bk" 'cd /backups
-for d in last daily weekly monthly; do test -L $d/app-latest.db.gz && echo "latest:$d"; done
-echo "links:$(find last -name "app-[0-9]*.db.gz" -printf "%n")"
+test -L app/latest.db.gz && echo "latest:app"
+for d in last daily weekly monthly; do test -e app/$d/app-latest.db.gz && echo "tierlatest:$d"; done
+echo "tiers:$(ls app | tr "\n" " ")"
+echo "links:$(find app/last -name "app-[0-9]*.db.gz" -printf "%n")"
 echo "sidecars:$(find /backups -name "*.tables" | wc -l)"
-gunzip -c last/app-latest.db.gz > /tmp/x.db
+gunzip -c app/latest.db.gz > /tmp/x.db
 echo "rows:$(sqlite3 /tmp/x.db "select count(*) from notes")"')
-  for d in last daily weekly monthly; do
-    assert_contains "$out" "latest:$d" "latest symlink in $d"
-  done
+  assert_contains "$out" "latest:app" "latest pointer in the unit folder"
+  assert_not_contains "$out" "tierlatest" "no latest link inside the tiers"
+  assert_contains "$out" "tiers:daily last latest.db.gz monthly weekly " "unit folder layout"
   assert_contains "$out" "links:4" "dump hardlinked into four tiers"
   assert_contains "$out" "sidecars:0" "no table-count file is written"
   assert_contains "$out" "rows:2" "dump content"
@@ -52,7 +54,7 @@ test_sqlite_verify_and_corruption() {
     || fail "verify of a good dump failed"
   ping_seen /t_verify_ok || fail "verify success ping not sent"
 
-  in_vol "$bk" 'cd /backups/last; f=$(readlink app-latest.db.gz); printf garbage | gzip > "$f"'
+  in_vol "$bk" 'cd /backups/app; f=$(readlink latest.db.gz); printf garbage | gzip > "$f"'
   if out=$(dbb "$bk" "${env[@]}" -e HC_VERIFY_PING_URL=http://mockping:8080/t_verify_bad -- verify 2>&1); then
     fail "verify accepted a corrupt dump"
   fi
@@ -68,13 +70,13 @@ test_sqlite_failure_keeps_previous_dump() {
   sqlite_data "$data"
   local -a env=(-v "$data:/data" -e DRIVER=sqlite -e HC_PING_URL=http://mockping:8080/t_keep)
   dbb "$bk" "${env[@]}" -e SQLITE_PATHS=/data/app.db -- backup > /dev/null
-  before=$(in_vol "$bk" 'readlink /backups/last/app-latest.db.gz')
+  before=$(in_vol "$bk" 'readlink /backups/app/latest.db.gz')
 
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'printf garbage > /data/app.db'
   rc=0
   dbb "$bk" "${env[@]}" -e SQLITE_PATHS=/data/app.db -- backup > /dev/null 2>&1 || rc=$?
   assert_eq "$rc" 1 "corrupt database exit code"
-  after=$(in_vol "$bk" 'readlink /backups/last/app-latest.db.gz')
+  after=$(in_vol "$bk" 'readlink /backups/app/latest.db.gz')
   assert_eq "$after" "$before" "latest unchanged after failed dump"
   out=$(in_vol "$bk" 'find /backups -name "*.partial*" -o -name ".sqlite.*"')
   assert_eq "$out" "" "no partial files left"
@@ -93,13 +95,13 @@ test_sqlite_prune_isolated() {
   data=$(new_volume prune_data)
   bk=$(new_volume prune_bk)
   sqlite_data "$data"
-  in_vol "$bk" 'cd /backups; mkdir -p last daily weekly monthly
+  in_vol "$bk" 'mkdir -p /backups/app; cd /backups/app; mkdir -p last daily weekly monthly
 touch -d 2020-01-01 daily/app-20200101.db.gz daily/app-extra-20200101.db.gz weekly/app-202001.db.gz monthly/app-202001.db.gz'
   dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -- backup > /dev/null
-  out=$(in_vol "$bk" 'cd /backups; ls daily')
+  out=$(in_vol "$bk" 'cd /backups/app; ls daily')
   assert_not_contains "$out" "app-20200101.db.gz" "old daily pruned"
   assert_contains "$out" "app-extra-20200101.db.gz" "other job's daily kept"
-  out=$(in_vol "$bk" 'cd /backups; ls weekly monthly')
+  out=$(in_vol "$bk" 'cd /backups/app; ls weekly monthly')
   assert_not_contains "$out" "app-202001.db.gz" "old weekly and monthly pruned"
   pass "sqlite prune isolated"
 }
@@ -162,7 +164,7 @@ test_sqlite_dump_is_compacted() {
   bk=$(new_volume compact_bk)
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/big.db "create table t (x blob); with recursive c(i) as (select 1 union all select i+1 from c where i < 3000) insert into t select randomblob(1024) from c; delete from t;"'
   dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/big.db -- backup > /dev/null
-  size=$(in_vol "$bk" 'gunzip -c /backups/last/big-latest.db.gz | wc -c')
+  size=$(in_vol "$bk" 'gunzip -c /backups/big/latest.db.gz | wc -c')
   [ "$size" -lt 100000 ] || fail "the dump holds $size bytes; a compacted copy is under 100000"
   pass "sqlite dump is compacted"
 }
@@ -174,8 +176,8 @@ test_sqlite_exclude_table_data() {
   sqlite_data "$data"
   local -a env=(-v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -e EXCLUDE_TABLE_DATA=notes)
   dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
-  out=$(in_vol "$bk" 'cd /backups/last
-gunzip -c app-latest.db.gz > /tmp/x.db
+  out=$(in_vol "$bk" 'cd /backups/app
+gunzip -c latest.db.gz > /tmp/x.db
 echo "notes:$(sqlite3 /tmp/x.db "select count(*) from notes")"
 echo "tables:$(sqlite3 /tmp/x.db "select count(*) from sqlite_master where type=\"table\"")"')
   assert_contains "$out" "notes:0" "rows of the excluded table are gone"
@@ -219,8 +221,8 @@ test_sqlite_exclude_does_not_fire_triggers() {
   docker run --rm -v "$data:/data" --entrypoint bash "$IMAGE" -c 'sqlite3 /data/trg.db "create table runs (id integer primary key, n integer); create table stats (n integer); create table users (id integer primary key); insert into runs values (1, 5); insert into stats values (42); insert into users values (1); create trigger runs_cleanup after delete on runs begin update stats set n = n - 1; delete from users; end;"'
   local -a env=(-v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/trg.db -e EXCLUDE_TABLE_DATA=runs)
   dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
-  out=$(in_vol "$bk" 'cd /backups/last
-gunzip -c trg-latest.db.gz > /tmp/x.db
+  out=$(in_vol "$bk" 'cd /backups/trg
+gunzip -c latest.db.gz > /tmp/x.db
 echo "runs:$(sqlite3 /tmp/x.db "select count(*) from runs")"
 echo "users:$(sqlite3 /tmp/x.db "select count(*) from users")"
 echo "stats:$(sqlite3 /tmp/x.db "select n from stats")"
@@ -238,10 +240,10 @@ test_prune_leaves_numeric_prefix_names() {
   data=$(new_volume numpfx_data)
   bk=$(new_volume numpfx_bk)
   sqlite_data "$data"
-  in_vol "$bk" 'cd /backups; mkdir -p last daily weekly monthly
+  in_vol "$bk" 'mkdir -p /backups/app; cd /backups/app; mkdir -p last daily weekly monthly
 touch -d 2020-01-01 daily/app-2-20200101.db.gz weekly/app-2-202001.db.gz monthly/app-2-202001.db.gz last/app-2-20200101-010000.db.gz'
   dbb "$bk" -v "$data:/data" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db -- backup > /dev/null
-  out=$(in_vol "$bk" 'cd /backups; ls last daily weekly monthly')
+  out=$(in_vol "$bk" 'cd /backups/app; ls last daily weekly monthly')
   assert_contains "$out" "app-2-20200101.db.gz" "another target's old daily is kept"
   assert_contains "$out" "app-2-202001.db.gz" "another target's old weekly and monthly are kept"
   assert_contains "$out" "app-2-20200101-010000.db.gz" "another target's old last dump is kept"

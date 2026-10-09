@@ -173,7 +173,7 @@ func (j *Job) backupAll(ctx context.Context) error {
 }
 
 func (j *Job) verifyOne(ctx context.Context, u unit) error {
-	latest := filepath.Join(j.cfg.BackupDir, "last", retention.LatestName(u.name, u.adapter.Suffix()))
+	latest := j.store.Latest(u.name, u.adapter.Suffix())
 	if _, err := os.Stat(latest); err != nil {
 		return fmt.Errorf("no dump found for %s", u.name)
 	}

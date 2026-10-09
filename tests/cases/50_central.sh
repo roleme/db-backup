@@ -26,9 +26,9 @@ CONFIG
   local -a beta=(-e BETA_PASSWORD=pgpass -e BETA_PING=http://mockping:8080/t_cen_beta)
   dbbr "$bk" -v "$data:/data" -- alpha backup > /dev/null || fail "alpha backup failed"
   dbbr "$bk" "${beta[@]}" -- beta backup > /dev/null || fail "beta backup failed"
-  out=$(in_vol "$bk" 'ls /backups/last')
-  assert_contains "$out" "app-latest.db.gz" "alpha dump"
-  assert_contains "$out" "app2-latest.sql.gz" "beta dump"
+  out=$(in_vol "$bk" 'ls /backups/app /backups/app2')
+  assert_contains "$out" "latest.db.gz" "alpha dump"
+  assert_contains "$out" "latest.sql.gz" "beta dump"
   ping_seen /t_cen_alpha || fail "alpha ping not sent"
   ping_seen /t_cen_beta || fail "beta ping not sent (resolved from the environment)"
   dbbr "$bk" -v "$data:/data" -- alpha verify > /dev/null || fail "alpha verify failed"

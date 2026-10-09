@@ -14,9 +14,9 @@ test_mysql_backup_and_verify() {
 
   dbb "$bk" "${env[@]}" -e HC_PING_URL=http://mockping:8080/t_my -- backup > /dev/null \
     || fail "mysql backup failed"
-  out=$(in_vol "$bk" 'cd /backups/last
-echo "tables:$(gunzip -c shop-latest.sql.gz | grep -c "^CREATE TABLE")"
-echo "posts:$(gunzip -c shop-latest.sql.gz | grep -c "CREATE TABLE .posts.")"')
+  out=$(in_vol "$bk" 'cd /backups/shop
+echo "tables:$(gunzip -c latest.sql.gz | grep -c "^CREATE TABLE")"
+echo "posts:$(gunzip -c latest.sql.gz | grep -c "CREATE TABLE .posts.")"')
   assert_contains "$out" "tables:2" "table count"
   assert_contains "$out" "posts:1" "posts table in dump"
   ping_seen /t_my || fail "success ping not sent"
@@ -34,7 +34,7 @@ test_mysql_verify_detects_corrupt_dump() {
   bk=$(new_volume mycor_bk)
   local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=bkp -e DB_PASSWORD=bkppw -e DATABASES=shop)
   dbb "$bk" "${env[@]}" -- backup > /dev/null
-  in_vol "$bk" 'cd /backups/last; f=$(readlink shop-latest.sql.gz); printf "THIS IS NOT SQL;\n" | gzip > "$f"'
+  in_vol "$bk" 'cd /backups/shop; f=$(readlink latest.sql.gz); printf "THIS IS NOT SQL;\n" | gzip > "$f"'
   if out=$(dbb "$bk" "${env[@]}" -e HC_VERIFY_PING_URL=http://mockping:8080/t_my_cor -- verify 2>&1); then
     fail "verify accepted a corrupt dump"
   fi
@@ -79,9 +79,9 @@ test_mysql_dump_has_routines_and_triggers() {
   bk=$(new_volume myobj_bk)
   dbb "$bk" -e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=bkp -e DB_PASSWORD=bkppw -e DATABASES=shop -- backup > /dev/null \
     || fail "backup as the least-privilege user failed"
-  out=$(in_vol "$bk" 'cd /backups/last
-echo "functions:$(gunzip -c shop-latest.sql.gz | grep -c "FUNCTION .one")"
-echo "triggers:$(gunzip -c shop-latest.sql.gz | grep -c "TRIGGER .tags_default")"')
+  out=$(in_vol "$bk" 'cd /backups/shop
+echo "functions:$(gunzip -c latest.sql.gz | grep -c "FUNCTION .one")"
+echo "triggers:$(gunzip -c latest.sql.gz | grep -c "TRIGGER .tags_default")"')
   assert_not_contains "$out" "functions:0" "the function is in the dump"
   assert_not_contains "$out" "triggers:0" "the trigger is in the dump"
   pass "mysql dump has routines and triggers"
@@ -93,10 +93,10 @@ test_mysql_exclude_table_data() {
   bk=$(new_volume myexcl_bk)
   local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=bkp -e DB_PASSWORD=bkppw -e DATABASES=shop -e EXCLUDE_TABLE_DATA=posts)
   dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "backup with excluded rows failed"
-  out=$(in_vol "$bk" 'cd /backups/last
-echo "schema:$(gunzip -c shop-latest.sql.gz | grep -c "CREATE TABLE .posts.")"
-echo "rows:$(gunzip -c shop-latest.sql.gz | grep -c "INSERT INTO .posts.")"
-echo "tables:$(gunzip -c shop-latest.sql.gz | grep -c "^CREATE TABLE")"')
+  out=$(in_vol "$bk" 'cd /backups/shop
+echo "schema:$(gunzip -c latest.sql.gz | grep -c "CREATE TABLE .posts.")"
+echo "rows:$(gunzip -c latest.sql.gz | grep -c "INSERT INTO .posts.")"
+echo "tables:$(gunzip -c latest.sql.gz | grep -c "^CREATE TABLE")"')
   assert_contains "$out" "schema:1" "the schema of the excluded table is kept"
   assert_contains "$out" "rows:0" "rows of the excluded table are gone"
   assert_contains "$out" "tables:2" "both tables are counted"
