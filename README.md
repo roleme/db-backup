@@ -51,7 +51,7 @@ Images are tagged `X.Y.Z`, with `X.Y`, `X` and `latest` following the newest rel
 ## Working on this repository
 
 - `go test -race ./...` runs the Go unit tests with the race detector; no Docker needed.
-- `lefthook install` enables the git hooks from `lefthook.yml`: gofmt, `go vet`, shellcheck and the public-hygiene check before each commit; race tests (shuffled), golangci-lint, staticcheck, `go mod tidy` and govulncheck before each push. Set `DBB_HYGIENE_EXTRA` in your shell to include your own forbidden names.
+- `lefthook install` enables the git hooks from `lefthook.yml`: gofmt, `go vet`, shellcheck and the public-hygiene check before each commit; race tests (shuffled), golangci-lint (includes staticcheck), `go mod tidy` and govulncheck before each push. Set `DBB_HYGIENE_EXTRA` in your shell to include your own forbidden names.
 - `tests/run.sh [filter]` builds the image and runs every `test_*` function whose name contains the filter, against real PostgreSQL, MySQL and SQLite containers. It needs Docker with Compose v2.
 - Every merge to `main` builds, scans and tests one image and pushes it as `sha-<commit>` (the `candidate` workflow); pull requests build and test locally and push nothing. To release, run the `release` workflow from the Actions tab: choose patch, minor or major, or give an explicit version. It adds the version tags to the existing candidate image of the head of `main` (same digest, no rebuild), then creates the git tag and the GitHub release. Run the `candidate` workflow with `force` to rebuild a stale candidate from scratch.
 - Write the failing test first. Every behaviour here has one.
