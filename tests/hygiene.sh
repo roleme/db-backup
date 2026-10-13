@@ -7,5 +7,5 @@ if [ -n "${DBB_HYGIENE_EXTRA:-}" ]; then
   pattern="$pattern|$DBB_HYGIENE_EXTRA"
 fi
 grep -rnEi "$pattern" "$ROOT" \
-  --exclude-dir=.git --exclude=.git --exclude-dir=.superpowers \
+  --exclude-dir=.git --exclude=.git --exclude-dir=.superpowers --exclude-dir=.agents \
   --exclude=hygiene.sh --exclude=90_public_hygiene.sh --exclude=LICENSE.upstream || true
