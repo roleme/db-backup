@@ -1,0 +1,39 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - gosec
+    - noctx
+    - bodyclose
+    - contextcheck
+    - nilerr
+    - gocritic
+    - revive
+    - unparam
+    - ineffassign
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*os.File).Close
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - os.Remove
+        - os.RemoveAll
+        - fmt.Fprintf
+    gosec:
+      excludes: [G104, G204, G301, G302, G304, G306, G703]
+    revive:
+      rules:
+        - name: redefines-builtin-id
+        - name: unused-parameter
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: context-as-argument
+        - name: unreachable-code
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, unparam, errcheck, revive]

@@ -157,7 +157,7 @@ func stripDefiners(r io.Reader) io.ReadCloser {
 }
 
 func nilIfEOF(err error) error {
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		return nil
 	}
 	return err

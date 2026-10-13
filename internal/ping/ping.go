@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -57,13 +58,18 @@ func (h *HTTP) Notify(base, suffix, body string) {
 }
 
 func (h *HTTP) try(url, body string) bool {
-	var resp *http.Response
-	var err error
-	if body == "" {
-		resp, err = h.Client.Get(url)
-	} else {
-		resp, err = h.Client.Post(url, "text/plain; charset=utf-8", strings.NewReader(body))
+	method, reader := http.MethodGet, io.Reader(nil)
+	if body != "" {
+		method, reader = http.MethodPost, strings.NewReader(body)
 	}
+	req, err := http.NewRequestWithContext(context.Background(), method, url, reader)
+	if err != nil {
+		return false
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	resp, err := h.Client.Do(req)
 	if err != nil {
 		return false
 	}

@@ -87,16 +87,16 @@ func (s *sqlite) sql(ctx context.Context, db, query string) (string, error) {
 	return strings.TrimRight(out, "\n"), err
 }
 
-func (s *sqlite) excludeRows(ctx context.Context, copy string) error {
+func (s *sqlite) excludeRows(ctx context.Context, dbCopy string) error {
 	tables := config.SplitList(s.cfg.ExcludeTableData)
 	if len(tables) == 0 {
 		return nil
 	}
-	drops, err := s.sql(ctx, copy, `select 'DROP TRIGGER "' || replace(name, '"', '""') || '";' from sqlite_master where type = 'trigger'`)
+	drops, err := s.sql(ctx, dbCopy, `select 'DROP TRIGGER "' || replace(name, '"', '""') || '";' from sqlite_master where type = 'trigger'`)
 	if err != nil {
 		return err
 	}
-	recreates, err := s.sql(ctx, copy, `select sql || ';' from sqlite_master where type = 'trigger' and sql is not null`)
+	recreates, err := s.sql(ctx, dbCopy, `select sql || ';' from sqlite_master where type = 'trigger' and sql is not null`)
 	if err != nil {
 		return err
 	}
@@ -104,10 +104,10 @@ func (s *sqlite) excludeRows(ctx context.Context, copy string) error {
 	for _, t := range tables {
 		deletes.WriteString("DELETE FROM " + quoteSQLite(t) + "; ")
 	}
-	if _, err := s.sql(ctx, copy, "BEGIN; "+drops+" "+deletes.String()+" "+recreates+" COMMIT;"); err != nil {
+	if _, err := s.sql(ctx, dbCopy, "BEGIN; "+drops+" "+deletes.String()+" "+recreates+" COMMIT;"); err != nil {
 		return err
 	}
-	_, err = s.sql(ctx, copy, "VACUUM")
+	_, err = s.sql(ctx, dbCopy, "VACUUM")
 	return err
 }
 
@@ -117,20 +117,20 @@ func (s *sqlite) Dump(ctx context.Context, unit string, w io.Writer) error {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	copy := filepath.Join(dir, "db")
+	dbCopy := filepath.Join(dir, "db")
 	err = s.run.Run(ctx, proc.Spec{
 		Name:   "sqlite3",
-		Args:   []string{"-cmd", ".timeout " + sqliteBusyTimeoutMs, s.files[unit], "VACUUM INTO " + quoteSQLiteString(copy)},
+		Args:   []string{"-cmd", ".timeout " + sqliteBusyTimeoutMs, s.files[unit], "VACUUM INTO " + quoteSQLiteString(dbCopy)},
 		Env:    proc.BaseEnv(),
 		Stdout: io.Discard,
 	})
 	if err != nil {
 		return err
 	}
-	if err := s.excludeRows(ctx, copy); err != nil {
+	if err := s.excludeRows(ctx, dbCopy); err != nil {
 		return err
 	}
-	f, err := os.Open(copy)
+	f, err := os.Open(dbCopy)
 	if err != nil {
 		return err
 	}
@@ -166,28 +166,28 @@ func (s *sqlite) count(ctx context.Context, db string) (int, error) {
 }
 
 func (s *sqlite) Tables(ctx context.Context, unit, path string) (int, error) {
-	copy, err := s.gunzipToTemp(unit, path)
+	dbCopy, err := s.gunzipToTemp(unit, path)
 	if err != nil {
 		return 0, err
 	}
-	defer os.Remove(copy)
-	return s.count(ctx, copy)
+	defer os.Remove(dbCopy)
+	return s.count(ctx, dbCopy)
 }
 
 func (s *sqlite) Verify(ctx context.Context, unit, path string) error {
-	copy, err := s.gunzipToTemp(unit, path)
+	dbCopy, err := s.gunzipToTemp(unit, path)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(copy)
-	res, err := s.sql(ctx, copy, "PRAGMA integrity_check")
+	defer os.Remove(dbCopy)
+	res, err := s.sql(ctx, dbCopy, "PRAGMA integrity_check")
 	if err != nil {
 		return fmt.Errorf("%s: %s", unit, res)
 	}
-	got, countErr := s.count(ctx, copy)
+	got, countErr := s.count(ctx, dbCopy)
 	fk := ""
 	if s.cfg.ExcludeTableData != "" {
-		out, err := s.sql(ctx, copy, "PRAGMA foreign_key_check")
+		out, err := s.sql(ctx, dbCopy, "PRAGMA foreign_key_check")
 		if err != nil {
 			out = "check failed: " + out
 		}

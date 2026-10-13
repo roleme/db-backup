@@ -251,11 +251,11 @@ func decodeStrict[T any](n *yaml.Node) (T, error) {
 func buildTarget(name string, n *yaml.Node) (*Target, error) {
 	d, err := decodeStrict[doc](n)
 	if err != nil {
-		return nil, fmt.Errorf("target %s: %v", name, err)
+		return nil, fmt.Errorf("target %s: %w", name, err)
 	}
 	t, err := d.target(name)
 	if err != nil {
-		return nil, fmt.Errorf("target %s: %v", name, err)
+		return nil, fmt.Errorf("target %s: %w", name, err)
 	}
 	return t, nil
 }
@@ -263,11 +263,11 @@ func buildTarget(name string, n *yaml.Node) (*Target, error) {
 func buildHeartbeat(n *yaml.Node) (*Heartbeat, error) {
 	d, err := decodeStrict[heartbeatDoc](n)
 	if err != nil {
-		return nil, fmt.Errorf("heartbeat: %v", err)
+		return nil, fmt.Errorf("heartbeat: %w", err)
 	}
 	h, err := d.heartbeat()
 	if err != nil {
-		return nil, fmt.Errorf("heartbeat: %v", err)
+		return nil, fmt.Errorf("heartbeat: %w", err)
 	}
 	return h, nil
 }
