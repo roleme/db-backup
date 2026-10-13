@@ -5,7 +5,9 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/roleme/db-backup/internal/proc"
 )
@@ -131,5 +133,40 @@ func TestMySQLTablesDoesNotCountUnloggedSyntax(t *testing.T) {
 	n, err := m.Tables(context.Background(), "shop", writeGz(t, "CREATE TABLE a (x int);\nCREATE TABLE b (x int);\nINSERT INTO a VALUES (1);\n"))
 	if err != nil || n != 2 {
 		t.Errorf("Tables = %d, %v", n, err)
+	}
+}
+
+type probeReader struct {
+	inRead atomic.Int32
+	reads  atomic.Int64
+}
+
+func (p *probeReader) Read(b []byte) (int, error) {
+	p.inRead.Add(1)
+	defer p.inRead.Add(-1)
+	p.reads.Add(1)
+	time.Sleep(time.Millisecond)
+	return copy(b, "CREATE VIEW v DEFINER=`root`@`%` AS SELECT 1;\n"), nil
+}
+
+func TestStripDefinersCloseStopsReadingFromTheSource(t *testing.T) {
+	p := &probeReader{}
+	s := stripDefiners(p)
+	buf := make([]byte, 64)
+	n, err := s.Read(buf)
+	if err != nil || strings.Contains(string(buf[:n]), "DEFINER") {
+		t.Fatalf("read %q err=%v, want the DEFINER clause stripped", buf[:n], err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if p.inRead.Load() != 0 {
+		t.Fatal("the source is still being read when Close returns")
+	}
+	before := p.reads.Load()
+	time.Sleep(50 * time.Millisecond)
+	if p.reads.Load() != before {
+		t.Error("the source was read again after Close")
 	}
 }
