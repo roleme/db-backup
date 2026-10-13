@@ -33,7 +33,7 @@ jobs:
           config: .hadolint.yaml
           failure-threshold: error
 
-  go:
+  golangci-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,25 +43,43 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: false
-
-      - name: Check formatting
-        run: test -z "$(gofmt -l .)"
-
-      - name: Vet
-        run: go vet ./...
 
       - name: Module files are tidy
         run: go mod tidy -diff
 
-      - name: Staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
-
       - name: golangci-lint
-        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run ./...
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.2
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
 
       - name: Vulnerability check
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          go-version-file: go.mod
+          go-package: ./...
+          repo-checkout: false
+
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
 
       - name: Unit tests
         run: go test -race -shuffle=on -coverpkg=./internal/... -coverprofile=coverage.out ./internal/...

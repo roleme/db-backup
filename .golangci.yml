@@ -13,6 +13,8 @@ linters:
     - revive
     - unparam
     - ineffassign
+    - staticcheck
+    - govet
   settings:
     errcheck:
       exclude-functions:
@@ -37,3 +39,6 @@ linters:
     rules:
       - path: _test\.go
         linters: [gosec, unparam, errcheck, revive]
+formatters:
+  enable:
+    - gofmt
