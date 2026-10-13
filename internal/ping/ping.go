@@ -30,13 +30,17 @@ func NewHTTP() *HTTP {
 }
 
 func (h *HTTP) Ping(base, suffix string) {
+	h.Notify(base, suffix, "")
+}
+
+func (h *HTTP) Notify(base, suffix, body string) {
 	if base == "" {
 		return
 	}
 	url := strings.TrimRight(base, "/") + suffix
 	delay := h.Backoff
 	for attempt := 0; ; attempt++ {
-		if h.try(url) {
+		if h.try(url, body) {
 			return
 		}
 		if attempt >= h.Retries {
@@ -52,8 +56,14 @@ func (h *HTTP) Ping(base, suffix string) {
 	logx.Warnf("ping %s failed", what)
 }
 
-func (h *HTTP) try(url string) bool {
-	resp, err := h.Client.Get(url)
+func (h *HTTP) try(url, body string) bool {
+	var resp *http.Response
+	var err error
+	if body == "" {
+		resp, err = h.Client.Get(url)
+	} else {
+		resp, err = h.Client.Post(url, "text/plain; charset=utf-8", strings.NewReader(body))
+	}
 	if err != nil {
 		return false
 	}

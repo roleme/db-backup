@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/roleme/db-backup/internal/proc"
+	"github.com/roleme/db-backup/internal/status"
 )
 
 type recPinger struct{ got []string }
@@ -141,5 +142,67 @@ func TestRunsOfOneTargetAreSerialised(t *testing.T) {
 	wg.Wait()
 	if c.max != 1 {
 		t.Errorf("up to %d runs of one target overlapped", c.max)
+	}
+}
+
+func withBackupDir(t *testing.T, r Runner) (Runner, string) {
+	t.Helper()
+	dir := t.TempDir()
+	prev := r.Getenv
+	r.Getenv = func(k string) string {
+		if k == "BACKUP_DIR" {
+			return dir
+		}
+		return prev(k)
+	}
+	r.Now = func() time.Time { return time.Unix(5_000, 0) }
+	return r, dir
+}
+
+func TestRunRecordsTheOutcomeOfBackupAndVerify(t *testing.T) {
+	r, f, _ := setup(t, "driver: sqlite")
+	r, dir := withBackupDir(t, r)
+
+	if code := r.Run(context.Background(), "one", "backup"); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	e, ok := status.Read(dir, "one", "backup")
+	if !ok || !e.OK || e.At != 5_000 || e.LastOK != 5_000 {
+		t.Errorf("backup entry = %+v ok=%v", e, ok)
+	}
+
+	f.Handler = func(proc.Spec) error { return exitErr(t, 7) }
+	if code := r.Run(context.Background(), "one", "verify"); code != 7 {
+		t.Fatalf("exit = %d", code)
+	}
+	e, ok = status.Read(dir, "one", "verify")
+	if !ok || e.OK || e.LastOK != 0 {
+		t.Errorf("verify entry = %+v ok=%v", e, ok)
+	}
+}
+
+func TestRunRecordsATimeoutAsAFailure(t *testing.T) {
+	r, _, _ := setup(t, "driver: sqlite, timeout: 1")
+	r, dir := withBackupDir(t, r)
+	r.Exec = blockUntilCancelled{}
+
+	if code := r.Run(context.Background(), "one", "backup"); code != 124 {
+		t.Fatalf("exit = %d", code)
+	}
+	if e, ok := status.Read(dir, "one", "backup"); !ok || e.OK {
+		t.Errorf("entry = %+v ok=%v, want a failed run", e, ok)
+	}
+}
+
+func TestRunDoesNotRecordCheckOrNames(t *testing.T) {
+	r, _, _ := setup(t, "driver: sqlite")
+	r, dir := withBackupDir(t, r)
+
+	r.Run(context.Background(), "one", "check")
+	r.Run(context.Background(), "one", "names")
+	for _, action := range []string{"check", "names", "backup", "verify"} {
+		if _, ok := status.Read(dir, "one", action); ok {
+			t.Errorf("%s must not leave an entry", action)
+		}
 	}
 }

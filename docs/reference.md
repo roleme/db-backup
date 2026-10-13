@@ -114,6 +114,33 @@ Each database, SQLite file or extra path (`<name>`) has its own folder. The four
 
 Each target pings its own endpoint, so the absence of a ping is the alert for a hung or stopped container as well as for a failed dump. The container health check only reports that the scheduler is alive; it cannot see a hung job. Pings never fail a dump.
 
+### Heartbeat
+
+Per-target pings need one check per target. A heartbeat needs two for the whole container, however many targets it runs. Add a `heartbeat` section beside `targets`:
+
+```yaml
+heartbeat:
+  ping_url_env: DUMPS_PING_URL
+  schedule: "5 3 * * *"
+  verify_ping_url_env: VERIFY_PING_URL
+  verify_schedule: "30 6 * * 0"
+```
+
+| Field | Meaning |
+|---|---|
+| `ping_url` / `ping_url_env` | the check for dumps; set at most one, and `schedule` with it |
+| `schedule` | when the dumps heartbeat runs; put it after the last backup of the night |
+| `verify_ping_url` / `verify_ping_url_env` | the check for restore tests; set at most one, and `verify_schedule` with it |
+| `verify_schedule` | when the verify heartbeat runs; put it after the last restore test |
+| `max_age_hours` | how old a target's last successful backup may be, default 26 |
+| `verify_max_age_hours` | the same for restore tests, default 192 (8 days) |
+
+Every backup and verify run records its outcome under `/backups/.status/`, so the record survives restarts and redeploys. At its schedule the heartbeat reads the records: it pings the URL when every target's last run succeeded within its limit (only targets with a `verify_schedule` count for verify), and sends `/fail` with one line per problem in the body otherwise, for example `alpha: last successful backup is 31 h old`. A target that failed validation counts as a problem for dumps. A missing ping is the alert for a stopped or hung container, as for the per-target pings. The heartbeat adds no check per target, and the per-target pings keep working beside it.
+
+A heartbeat that fails validation (unknown field, both forms of a URL, an unset variable, a rejected schedule) is skipped with an error in the log, and the container reports itself unhealthy while the targets keep running. `db-backup-heartbeat dumps` and `db-backup-heartbeat verify` run a heartbeat by hand.
+
+Pings use the container's `HTTPS_PROXY` and `NO_PROXY` variables when set, so a container with no direct internet access can reach its monitor through a proxy that allows only that host.
+
 ## Restoring
 
 ```

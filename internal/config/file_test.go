@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeConfig(t *testing.T, body string) string {
@@ -271,5 +272,99 @@ func TestLoadAcceptsTLSFields(t *testing.T) {
 		if tg.Vars["DB_SSL_CA"] == "" && tg.Vars["DB_SSL_FINGERPRINT"] == "" {
 			t.Errorf("%s: no TLS setting reached the job: %v", name, tg.Vars)
 		}
+	}
+}
+
+func loadFile(t *testing.T, body string) *File {
+	t.Helper()
+	f, err := Load(writeConfig(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestLoadHeartbeatFields(t *testing.T) {
+	f := loadFile(t, `
+heartbeat:
+  ping_url_env: DUMPS_URL
+  schedule: "5 3 * * *"
+  verify_ping_url: http://x/verify
+  verify_schedule: "30 6 * * 0"
+  max_age_hours: 30
+  verify_max_age_hours: 200
+targets:
+  a: {driver: sqlite}
+`)
+	if f.HeartbeatErr != nil || f.Heartbeat == nil {
+		t.Fatalf("heartbeat = %+v err = %v", f.Heartbeat, f.HeartbeatErr)
+	}
+	h := f.Heartbeat
+	if h.PingURLEnv != "DUMPS_URL" || h.Schedule != "5 3 * * *" || h.VerifyPingURL != "http://x/verify" || h.VerifySchedule != "30 6 * * 0" {
+		t.Errorf("heartbeat = %+v", h)
+	}
+	if h.MaxAge != 30*time.Hour || h.VerifyMaxAge != 200*time.Hour {
+		t.Errorf("limits = %v %v", h.MaxAge, h.VerifyMaxAge)
+	}
+}
+
+func TestHeartbeatDefaultsAndAbsence(t *testing.T) {
+	f := loadFile(t, "targets:\n  a: {driver: sqlite}\n")
+	if f.Heartbeat != nil || f.HeartbeatErr != nil {
+		t.Errorf("an absent section must stay absent: %+v %v", f.Heartbeat, f.HeartbeatErr)
+	}
+	f = loadFile(t, "heartbeat:\n  ping_url: http://x\n  schedule: \"@daily\"\ntargets:\n  a: {driver: sqlite}\n")
+	if f.Heartbeat.MaxAge != 26*time.Hour || f.Heartbeat.VerifyMaxAge != 192*time.Hour {
+		t.Errorf("defaults = %v %v", f.Heartbeat.MaxAge, f.Heartbeat.VerifyMaxAge)
+	}
+}
+
+func TestHeartbeatErrorsDoNotHideTheTargets(t *testing.T) {
+	cases := map[string]struct{ section, want string }{
+		"typo":      {"  ping_url: http://x\n  schedule: \"@daily\"\n  shedule: x", "heartbeat: field shedule not found"},
+		"both":      {"  ping_url: a\n  ping_url_env: B\n  schedule: \"@daily\"", "heartbeat: set only one of ping_url and ping_url_env"},
+		"vboth":     {"  verify_ping_url: a\n  verify_ping_url_env: B\n  verify_schedule: \"@daily\"", "heartbeat: set only one of verify_ping_url and verify_ping_url_env"},
+		"nourl":     {"  schedule: \"@daily\"", "heartbeat: set ping_url or verify_ping_url"},
+		"nosched":   {"  ping_url: http://x", "heartbeat: schedule is required with ping_url"},
+		"novsched":  {"  verify_ping_url: http://x", "heartbeat: verify_schedule is required with verify_ping_url"},
+		"badsched":  {"  ping_url: http://x\n  schedule: nonsense", "heartbeat: invalid schedule in schedule: nonsense"},
+		"badlimit":  {"  ping_url: http://x\n  schedule: \"@daily\"\n  max_age_hours: 0", "heartbeat: max_age_hours must be a positive integer"},
+		"badvlimit": {"  verify_ping_url: http://x\n  verify_schedule: \"@daily\"\n  verify_max_age_hours: -1", "heartbeat: verify_max_age_hours must be a positive integer"},
+	}
+	for name, c := range cases {
+		f := loadFile(t, "heartbeat:\n"+c.section+"\ntargets:\n  a: {driver: sqlite}\n")
+		if f.HeartbeatErr == nil || !strings.Contains(f.HeartbeatErr.Error(), c.want) {
+			t.Errorf("%s: error = %v, want %q", name, f.HeartbeatErr, c.want)
+		}
+		if _, err := f.Target("a"); err != nil {
+			t.Errorf("%s: the target must still load: %v", name, err)
+		}
+	}
+}
+
+func TestHeartbeatURLs(t *testing.T) {
+	f := loadFile(t, `
+heartbeat:
+  ping_url_env: DUMPS
+  schedule: "@daily"
+  verify_ping_url: http://x/verify
+  verify_schedule: "@weekly"
+targets:
+  a: {driver: sqlite}
+`)
+	dumps, verify, err := f.Heartbeat.URLs(func(k string) string { return map[string]string{"DUMPS": "http://x/dumps"}[k] })
+	if err != nil || dumps != "http://x/dumps" || verify != "http://x/verify" {
+		t.Errorf("urls = %q %q err = %v", dumps, verify, err)
+	}
+	_, _, err = f.Heartbeat.URLs(func(string) string { return "" })
+	if err == nil || !strings.Contains(err.Error(), "environment variable DUMPS (from ping_url_env) is not set") {
+		t.Errorf("unset variable error = %v", err)
+	}
+}
+
+func TestUnknownTopLevelFieldIsStillAnError(t *testing.T) {
+	_, err := Load(writeConfig(t, "other: 1\ntargets:\n  a: {driver: sqlite}\n"))
+	if err == nil || !strings.Contains(err.Error(), "only targets and heartbeat are allowed") {
+		t.Errorf("error = %v", err)
 	}
 }

@@ -41,7 +41,31 @@ type Entry struct {
 }
 
 type File struct {
-	Entries []Entry
+	Entries      []Entry
+	Heartbeat    *Heartbeat
+	HeartbeatErr error
+}
+
+type Heartbeat struct {
+	PingURL          string
+	PingURLEnv       string
+	Schedule         string
+	VerifyPingURL    string
+	VerifyPingURLEnv string
+	VerifySchedule   string
+	MaxAge           time.Duration
+	VerifyMaxAge     time.Duration
+}
+
+type heartbeatDoc struct {
+	PingURL           string `yaml:"ping_url"`
+	PingURLEnv        string `yaml:"ping_url_env"`
+	Schedule          string `yaml:"schedule"`
+	VerifyPingURL     string `yaml:"verify_ping_url"`
+	VerifyPingURLEnv  string `yaml:"verify_ping_url_env"`
+	VerifySchedule    string `yaml:"verify_schedule"`
+	MaxAgeHours       *int   `yaml:"max_age_hours"`
+	VerifyMaxAgeHours *int   `yaml:"verify_max_age_hours"`
 }
 
 type keep struct {
@@ -108,16 +132,20 @@ func Parse(path string, b []byte) (*File, error) {
 	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("%s: the file must be a mapping with a targets key", path)
 	}
-	var targets *yaml.Node
+	var targets, beat *yaml.Node
 	top, err := pairs(root.Content[0])
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	for _, p := range top {
-		if p.name != "targets" {
-			return nil, fmt.Errorf("%s: unknown field %s (only targets is allowed)", path, p.name)
+		switch p.name {
+		case "targets":
+			targets = p.value
+		case "heartbeat":
+			beat = p.value
+		default:
+			return nil, fmt.Errorf("%s: unknown field %s (only targets and heartbeat are allowed)", path, p.name)
 		}
-		targets = p.value
 	}
 	if targets == nil || targets.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("%s: targets must be a mapping of target name to settings", path)
@@ -127,6 +155,9 @@ func Parse(path string, b []byte) (*File, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	f := &File{}
+	if beat != nil {
+		f.Heartbeat, f.HeartbeatErr = buildHeartbeat(beat)
+	}
 	for _, p := range list {
 		e := Entry{Name: p.name}
 		e.pingURL, e.pingURLEnv = lenientPing(p.value)
@@ -190,8 +221,8 @@ func lenientPing(n *yaml.Node) (string, string) {
 	return p.PingURL, p.PingURLEnv
 }
 
-func decodeStrict(n *yaml.Node) (doc, error) {
-	var d doc
+func decodeStrict[T any](n *yaml.Node) (T, error) {
+	var d T
 	raw, err := yaml.Marshal(n)
 	if err != nil {
 		return d, err
@@ -213,7 +244,7 @@ func decodeStrict(n *yaml.Node) (doc, error) {
 }
 
 func buildTarget(name string, n *yaml.Node) (*Target, error) {
-	d, err := decodeStrict(n)
+	d, err := decodeStrict[doc](n)
 	if err != nil {
 		return nil, fmt.Errorf("target %s: %v", name, err)
 	}
@@ -222,6 +253,94 @@ func buildTarget(name string, n *yaml.Node) (*Target, error) {
 		return nil, fmt.Errorf("target %s: %v", name, err)
 	}
 	return t, nil
+}
+
+func buildHeartbeat(n *yaml.Node) (*Heartbeat, error) {
+	d, err := decodeStrict[heartbeatDoc](n)
+	if err != nil {
+		return nil, fmt.Errorf("heartbeat: %v", err)
+	}
+	h, err := d.heartbeat()
+	if err != nil {
+		return nil, fmt.Errorf("heartbeat: %v", err)
+	}
+	return h, nil
+}
+
+func (d heartbeatDoc) heartbeat() (*Heartbeat, error) {
+	for _, c := range [][4]string{
+		{"ping_url", d.PingURL, "ping_url_env", d.PingURLEnv},
+		{"verify_ping_url", d.VerifyPingURL, "verify_ping_url_env", d.VerifyPingURLEnv},
+	} {
+		if c[1] != "" && c[3] != "" {
+			return nil, fmt.Errorf("set only one of %s and %s", c[0], c[2])
+		}
+	}
+	dumps := d.PingURL != "" || d.PingURLEnv != ""
+	verify := d.VerifyPingURL != "" || d.VerifyPingURLEnv != ""
+	if !dumps && !verify {
+		return nil, errors.New("set ping_url or verify_ping_url")
+	}
+	if dumps && d.Schedule == "" {
+		return nil, errors.New("schedule is required with ping_url")
+	}
+	if verify && d.VerifySchedule == "" {
+		return nil, errors.New("verify_schedule is required with verify_ping_url")
+	}
+	for _, s := range []struct{ field, value string }{{"schedule", d.Schedule}, {"verify_schedule", d.VerifySchedule}} {
+		if s.value == "" {
+			continue
+		}
+		if err := checkSchedule(s.field, s.value); err != nil {
+			return nil, err
+		}
+	}
+	h := &Heartbeat{
+		PingURL: d.PingURL, PingURLEnv: d.PingURLEnv, Schedule: d.Schedule,
+		VerifyPingURL: d.VerifyPingURL, VerifyPingURLEnv: d.VerifyPingURLEnv, VerifySchedule: d.VerifySchedule,
+		MaxAge: 26 * time.Hour, VerifyMaxAge: 192 * time.Hour,
+	}
+	for _, l := range []struct {
+		field string
+		hours *int
+		dst   *time.Duration
+	}{{"max_age_hours", d.MaxAgeHours, &h.MaxAge}, {"verify_max_age_hours", d.VerifyMaxAgeHours, &h.VerifyMaxAge}} {
+		if l.hours == nil {
+			continue
+		}
+		if *l.hours < 1 {
+			return nil, fmt.Errorf("%s must be a positive integer", l.field)
+		}
+		*l.dst = time.Duration(*l.hours) * time.Hour
+	}
+	return h, nil
+}
+
+func (h *Heartbeat) URLs(getenv func(string) string) (dumps, verify string, err error) {
+	if dumps, err = pingURL("ping_url_env", h.PingURL, h.PingURLEnv, getenv); err != nil {
+		return "", "", err
+	}
+	if verify, err = pingURL("verify_ping_url_env", h.VerifyPingURL, h.VerifyPingURLEnv, getenv); err != nil {
+		return "", "", err
+	}
+	return dumps, verify, nil
+}
+
+func pingURL(field, direct, ref string, getenv func(string) string) (string, error) {
+	if direct != "" {
+		return direct, nil
+	}
+	if ref == "" {
+		return "", nil
+	}
+	if !envRefRe.MatchString(ref) {
+		return "", fmt.Errorf("%s must name an environment variable", field)
+	}
+	v := getenv(ref)
+	if v == "" {
+		return "", fmt.Errorf("environment variable %s (from %s) is not set", ref, field)
+	}
+	return v, nil
 }
 
 func (d doc) target(name string) (*Target, error) {
