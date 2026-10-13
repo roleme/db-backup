@@ -66,7 +66,31 @@ func (s Store) Save(unit, suffix, tmp string) error {
 	}
 	link := s.Latest(unit, suffix)
 	target := filepath.Join(string(Last), lastName)
-	return replace(func() error { return os.Remove(link) }, func() error { return os.Symlink(target, link) })
+	if err := replace(func() error { return os.Remove(link) }, func() error { return os.Symlink(target, link) }); err != nil {
+		return err
+	}
+	return s.syncDirs(unit)
+}
+
+func (s Store) syncDirs(unit string) error {
+	dirs := []string{s.unitDir(unit)}
+	for _, t := range Tiers {
+		dirs = append(dirs, s.tierDir(unit, t))
+	}
+	for _, dir := range dirs {
+		d, err := os.Open(dir)
+		if err != nil {
+			return err
+		}
+		err = d.Sync()
+		if cerr := d.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s Store) Prune(unit, suffix string) error {

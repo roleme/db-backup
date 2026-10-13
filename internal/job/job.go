@@ -3,7 +3,9 @@ package job
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,6 +126,9 @@ func (j *Job) backupOne(ctx context.Context, u unit) error {
 	if err := gz.Close(); err != nil {
 		return fail(err)
 	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(path)
 		return err
@@ -175,7 +180,10 @@ func (j *Job) backupAll(ctx context.Context) error {
 func (j *Job) verifyOne(ctx context.Context, u unit) error {
 	latest := j.store.Latest(u.name, u.adapter.Suffix())
 	if _, err := os.Stat(latest); err != nil {
-		return fmt.Errorf("no dump found for %s", u.name)
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("no dump found for %s", u.name)
+		}
+		return fmt.Errorf("cannot read the latest dump of %s: %w", u.name, err)
 	}
 	if err := u.adapter.Verify(ctx, u.name, latest); err != nil {
 		return err

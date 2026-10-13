@@ -70,7 +70,7 @@ func (c *Config) Secret(name string) (string, error) {
 	if file := c.vars[name+"_FILE"]; file != "" {
 		b, err := os.ReadFile(file)
 		if err != nil {
-			return "", fmt.Errorf("%s is not readable", fieldName(name))
+			return "", fmt.Errorf("%s is not readable: %w", fieldName(name), err)
 		}
 		return strings.NewReplacer("\r", "", "\n", "").Replace(string(b)), nil
 	}

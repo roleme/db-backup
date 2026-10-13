@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -367,5 +369,12 @@ func TestUnknownTopLevelFieldIsStillAnError(t *testing.T) {
 	_, err := Load(writeConfig(t, "other: 1\ntargets:\n  a: {driver: sqlite}\n"))
 	if err == nil || !strings.Contains(err.Error(), "only targets and heartbeat are allowed") {
 		t.Errorf("error = %v", err)
+	}
+}
+
+func TestLoadKeepsTheUnderlyingReadError(t *testing.T) {
+	_, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("error = %v, want it to wrap fs.ErrNotExist", err)
 	}
 }

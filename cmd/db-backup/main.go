@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -64,6 +65,8 @@ func jobRole(ctx context.Context, args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: db-backup backup|verify|check|names")
 		return 2
 	}
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
 	vars := map[string]string{}
 	for _, kv := range os.Environ() {
 		if k, v, ok := strings.Cut(kv, "="); ok {

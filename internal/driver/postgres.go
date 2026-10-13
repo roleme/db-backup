@@ -65,6 +65,11 @@ func (p *postgres) Validate() error {
 	if len(p.dbs) == 0 {
 		return errors.New("databases lists no databases")
 	}
+	for _, db := range p.dbs {
+		if strings.Contains(db, "=") {
+			return fmt.Errorf("database name %s must not contain '='", db)
+		}
+	}
 	return nil
 }
 
@@ -132,15 +137,17 @@ func (p *postgres) restoreAndCount(ctx context.Context, scratch, path string) (i
 
 func (p *postgres) Verify(ctx context.Context, unit, path string) error {
 	scratch := "dbb_verify_" + unit
-	if err := p.psql(ctx, "postgres", "DROP DATABASE IF EXISTS "+quotePG(scratch)); err != nil {
+	if err := p.psql(ctx, "postgres", "DROP DATABASE IF EXISTS "+quotePG(scratch)+" WITH (FORCE)"); err != nil {
 		return err
 	}
 	if err := p.psql(ctx, "postgres", "CREATE DATABASE "+quotePG(scratch)); err != nil {
 		return err
 	}
 	got, rerr := p.restoreAndCount(ctx, scratch, path)
-	if err := p.psql(ctx, "postgres", "DROP DATABASE IF EXISTS "+quotePG(scratch)); err != nil {
-		logx.Warnf("could not drop %s", scratch)
+	cctx, cancel := cleanupContext(ctx)
+	defer cancel()
+	if err := p.psql(cctx, "postgres", "DROP DATABASE IF EXISTS "+quotePG(scratch)+" WITH (FORCE)"); err != nil {
+		logx.Warnf("could not drop %s: %v", scratch, err)
 	}
 	if rerr != nil {
 		return rerr

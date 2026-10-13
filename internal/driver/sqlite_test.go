@@ -117,3 +117,10 @@ func TestSQLiteNamedPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestSQLiteRejectsRelativePaths(t *testing.T) {
+	err := newSQLite(testConfig(t, "SQLITE_PATHS", "-header.db"), &proc.Fake{}).Validate()
+	if err == nil || !strings.Contains(err.Error(), "paths entry -header.db must be an absolute path") {
+		t.Errorf("error = %v", err)
+	}
+}

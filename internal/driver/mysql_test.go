@@ -3,6 +3,7 @@ package driver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -168,5 +169,37 @@ func TestStripDefinersCloseStopsReadingFromTheSource(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if p.reads.Load() != before {
 		t.Error("the source was read again after Close")
+	}
+}
+
+func TestMySQLVerifyDropsTheScratchDatabaseAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := &proc.Fake{Handler: func(s proc.Spec) error {
+		if s.Stdin != nil {
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}}
+	m := newTestMySQL(t, f)
+	err := m.Verify(ctx, "shop", writeGz(t, "CREATE TABLE a (x int);\n"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want the cancellation", err)
+	}
+	last := f.Calls[len(f.Calls)-1]
+	if !strings.Contains(strings.Join(last.Spec.Args, " "), "DROP DATABASE IF EXISTS") {
+		t.Fatalf("last call = %v, want the scratch drop", last.Spec.Args)
+	}
+	if last.CtxErr != nil {
+		t.Errorf("the drop ran on a cancelled context: %v", last.CtxErr)
+	}
+}
+
+func TestMySQLRejectsDatabaseNamesThatLookLikeOptions(t *testing.T) {
+	cfg := testConfig(t, "DRIVER", "mysql", "DB_HOST", "h", "DB_USER", "u", "DB_PASSWORD", "x", "DATABASES", "shop,--all-databases")
+	err := newMySQL(cfg, &proc.Fake{}).Validate()
+	if err == nil || !strings.Contains(err.Error(), "database name --all-databases must not start with '-'") {
+		t.Errorf("error = %v", err)
 	}
 }

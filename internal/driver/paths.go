@@ -51,7 +51,7 @@ func (p *paths) Dump(ctx context.Context, unit string, w io.Writer) error {
 	}
 	return p.run.Run(ctx, proc.Spec{
 		Name:   "tar",
-		Args:   []string{"-C", filepath.Dir(path), "-cf", "-", unit},
+		Args:   []string{"-C", filepath.Dir(path), "-cf", "-", "--", unit},
 		Env:    proc.BaseEnv(),
 		Stdout: w,
 	})
