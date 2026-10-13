@@ -119,9 +119,26 @@ func (m *mysql) Tables(_ context.Context, _, path string) (int, error) {
 	return countTables(path, mysqlCreateTable)
 }
 
-func stripDefiners(r io.Reader) io.Reader {
+type definerStripper struct {
+	pr   *io.PipeReader
+	done chan struct{}
+}
+
+func (d definerStripper) Read(p []byte) (int, error) {
+	return d.pr.Read(p)
+}
+
+func (d definerStripper) Close() error {
+	err := d.pr.Close()
+	<-d.done
+	return err
+}
+
+func stripDefiners(r io.Reader) io.ReadCloser {
 	pr, pw := io.Pipe()
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		br := bufio.NewReaderSize(r, 64<<10)
 		for {
 			line, err := br.ReadBytes('\n')
@@ -136,7 +153,7 @@ func stripDefiners(r io.Reader) io.Reader {
 			}
 		}
 	}()
-	return pr
+	return definerStripper{pr: pr, done: done}
 }
 
 func nilIfEOF(err error) error {
@@ -175,7 +192,9 @@ func (m *mysql) restore(ctx context.Context, scratch, path string) (got, orphans
 		return 0, 0, err
 	}
 	defer r.Close()
-	err = m.run.Run(ctx, proc.Spec{Name: "mariadb", Args: m.client("--one-database", scratch), Env: m.env, Stdin: stripDefiners(r), Stdout: io.Discard})
+	stripped := stripDefiners(r)
+	defer stripped.Close()
+	err = m.run.Run(ctx, proc.Spec{Name: "mariadb", Args: m.client("--one-database", scratch), Env: m.env, Stdin: stripped, Stdout: io.Discard})
 	if err != nil {
 		return 0, 0, err
 	}
