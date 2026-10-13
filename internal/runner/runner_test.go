@@ -246,3 +246,38 @@ func TestRunRecordsAFailureWhenTheRunnerFailsBeforeStartingTheJob(t *testing.T) 
 		t.Error("check must not leave an entry")
 	}
 }
+
+func TestRunPingsFailWhenTheRunnerFailsBeforeStartingTheJob(t *testing.T) {
+	cases := []struct {
+		action, body, want string
+	}{
+		{"backup", "driver: sqlite, password_env: NOT_SET, ping_url: https://monitor.test/b", "https://monitor.test/b/fail"},
+		{"verify", "driver: sqlite, password_env: NOT_SET, verify_ping_url: https://monitor.test/v", "https://monitor.test/v/fail"},
+		{"backup", "driver: sqlite, password_env: NOT_SET, ping_url_env: ONE_PING", "https://monitor.test/env/fail"},
+	}
+	for _, c := range cases {
+		r, _, p := setup(t, c.body)
+		get := r.Getenv
+		r.Getenv = func(k string) string {
+			if k == "ONE_PING" {
+				return "https://monitor.test/env"
+			}
+			return get(k)
+		}
+		if code := r.Run(context.Background(), "one", c.action); code != 1 {
+			t.Fatalf("%s: exit = %d", c.action, code)
+		}
+		if len(p.got) != 1 || p.got[0] != c.want {
+			t.Errorf("%s: pings = %v, want [%s]", c.action, p.got, c.want)
+		}
+	}
+}
+
+func TestRunDoesNotPingForActionsWithoutAMonitor(t *testing.T) {
+	r, _, p := setup(t, "driver: sqlite, password_env: NOT_SET, ping_url: https://monitor.test/b")
+	r.Run(context.Background(), "one", "check")
+	r.Run(context.Background(), "one", "verify")
+	if len(p.got) != 0 {
+		t.Errorf("pings = %v, want none", p.got)
+	}
+}

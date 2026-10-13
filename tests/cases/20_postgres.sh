@@ -140,3 +140,17 @@ test_postgres_verify_cleans_up_when_terminated() {
   assert_eq "$(scratch_dbs)" "0" "scratch database dropped after SIGTERM"
   pass "postgres verify cleans up when terminated"
 }
+
+test_postgres_verify_detects_truncated_dump() {
+  local bk out
+  bk=$(new_volume pgtrunc_bk)
+  dbb "$bk" "${pg_env[@]}" -e DATABASES=app -- backup > /dev/null
+  in_vol "$bk" 'cd /backups/app; f=$(readlink latest.sql.gz); size=$(stat -c %s "$f"); head -c $((size / 2)) "$f" > "$f.cut"; mv "$f.cut" "$f"'
+  if out=$(dbb "$bk" "${pg_env[@]}" -e DATABASES=app -e HC_VERIFY_PING_URL=http://mockping:8080/t_pg_trunc -- verify 2>&1); then
+    fail "verify accepted a truncated dump"
+  fi
+  assert_contains "$out" "ERROR" "verify reports the failure"
+  ping_seen /t_pg_trunc/fail || fail "fail ping not sent"
+  assert_eq "$(scratch_dbs)" "0" "scratch database dropped after a truncated restore"
+  pass "postgres verify detects truncated dump"
+}

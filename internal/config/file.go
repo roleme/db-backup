@@ -36,11 +36,10 @@ type Target struct {
 }
 
 type Entry struct {
-	Name       string
-	Target     *Target
-	Err        error
-	pingURL    string
-	pingURLEnv string
+	Name   string
+	Target *Target
+	Err    error
+	ping   pingDoc
 }
 
 type File struct {
@@ -108,8 +107,10 @@ type doc struct {
 }
 
 type pingDoc struct {
-	PingURL    string `yaml:"ping_url"`
-	PingURLEnv string `yaml:"ping_url_env"`
+	PingURL          string `yaml:"ping_url"`
+	PingURLEnv       string `yaml:"ping_url_env"`
+	VerifyPingURL    string `yaml:"verify_ping_url"`
+	VerifyPingURLEnv string `yaml:"verify_ping_url_env"`
 }
 
 func CheckName(name string) error {
@@ -163,7 +164,7 @@ func Parse(path string, b []byte) (*File, error) {
 	}
 	for _, p := range list {
 		e := Entry{Name: p.name}
-		e.pingURL, e.pingURLEnv = lenientPing(p.value)
+		e.ping = lenientPing(p.value)
 		if err := CheckName(p.name); err != nil {
 			e.Err = err
 		} else if t, err := buildTarget(p.name, p.value); err != nil {
@@ -192,11 +193,28 @@ func (f *File) Target(name string) (*Target, error) {
 }
 
 func (e Entry) FailPingURL(getenv func(string) string) string {
-	if e.pingURL != "" {
-		return e.pingURL
+	return lenientURL(e.ping.PingURL, e.ping.PingURLEnv, getenv)
+}
+
+func (e Entry) VerifyFailPingURL(getenv func(string) string) string {
+	return lenientURL(e.ping.VerifyPingURL, e.ping.VerifyPingURLEnv, getenv)
+}
+
+func (f *File) Entry(name string) (Entry, bool) {
+	for _, e := range f.Entries {
+		if e.Name == name {
+			return e, true
+		}
 	}
-	if envRefRe.MatchString(e.pingURLEnv) {
-		return getenv(e.pingURLEnv)
+	return Entry{}, false
+}
+
+func lenientURL(direct, ref string, getenv func(string) string) string {
+	if direct != "" {
+		return direct
+	}
+	if envRefRe.MatchString(ref) {
+		return getenv(ref)
 	}
 	return ""
 }
@@ -220,10 +238,10 @@ func pairs(m *yaml.Node) ([]pair, error) {
 	return out, nil
 }
 
-func lenientPing(n *yaml.Node) (string, string) {
+func lenientPing(n *yaml.Node) pingDoc {
 	var p pingDoc
 	_ = n.Decode(&p)
-	return p.PingURL, p.PingURLEnv
+	return p
 }
 
 func decodeStrict[T any](n *yaml.Node) (T, error) {
