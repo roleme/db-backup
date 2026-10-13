@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,5 +80,16 @@ func TestCheckSchedule(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "invalid schedule in schedule: "+bad) {
 			t.Errorf("%q: error = %v", bad, err)
 		}
+	}
+}
+
+func TestSecretKeepsTheUnderlyingReadError(t *testing.T) {
+	c, err := FromVars(vars("DRIVER", "postgres", "DB_PASSWORD_FILE", filepath.Join(t.TempDir(), "missing")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Secret("DB_PASSWORD")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("error = %v, want it to wrap fs.ErrNotExist", err)
 	}
 }

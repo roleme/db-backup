@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/roleme/db-backup/internal/config"
 	"github.com/roleme/db-backup/internal/proc"
@@ -38,4 +39,10 @@ func ForConfig(cfg *config.Config, run proc.Runner) ([]Adapter, error) {
 		adapters = append(adapters, newPaths(cfg, run))
 	}
 	return adapters, nil
+}
+
+const cleanupTimeout = 20 * time.Second
+
+func cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 }

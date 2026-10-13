@@ -125,3 +125,18 @@ echo "tables:$(gunzip -c latest.sql.gz | grep -c "^CREATE TABLE")"')
   dbb "$bk" "${env[@]}" -- verify > /dev/null || fail "verify after excluding rows failed"
   pass "postgres exclude table data"
 }
+
+test_postgres_verify_cleans_up_when_terminated() {
+  local bk name
+  bk=$(new_volume pgterm_bk)
+  name="dbbtest_term_$$"
+  dbb "$bk" "${pg_env[@]}" -e DATABASES=app -- backup > /dev/null
+  in_vol "$bk" 'cd /backups/app; f=$(readlink latest.sql.gz); printf "SELECT pg_sleep(300);\n" | gzip > "$f"'
+  docker run -d --name "$name" --network "$NETWORK" -v "$bk:/backups" --entrypoint db-backup "${pg_env[@]}" -e DATABASES=app "$IMAGE" verify > /dev/null
+  wait_for 30 '[ "$(scratch_dbs)" = 1 ]' || { docker rm -f "$name" > /dev/null; fail "verify never started restoring"; }
+  docker kill -s TERM "$name" > /dev/null
+  wait_for 40 '[ "$(docker inspect -f "{{.State.Running}}" "$name")" = false ]' || { docker rm -f "$name" > /dev/null; fail "verify did not stop after SIGTERM"; }
+  docker rm -f "$name" > /dev/null
+  assert_eq "$(scratch_dbs)" "0" "scratch database dropped after SIGTERM"
+  pass "postgres verify cleans up when terminated"
+}

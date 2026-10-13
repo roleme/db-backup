@@ -3,6 +3,7 @@ package driver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -116,5 +117,37 @@ func TestPostgresTablesCountsUnlogged(t *testing.T) {
 	n, err := p.Tables(context.Background(), "app", writeGz(t, "CREATE TABLE a (x int);\nCREATE UNLOGGED TABLE b (x int);\nCREATE INDEX i ON a (x);\n"))
 	if err != nil || n != 2 {
 		t.Errorf("Tables = %d, %v", n, err)
+	}
+}
+
+func TestPostgresVerifyDropsTheScratchDatabaseAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := &proc.Fake{Handler: func(s proc.Spec) error {
+		if s.Stdin != nil {
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}}
+	p := newTestPG(t, f)
+	err := p.Verify(ctx, "app", writeGz(t, "CREATE TABLE a (x int);\n"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want the cancellation", err)
+	}
+	last := f.Calls[len(f.Calls)-1]
+	if !strings.Contains(strings.Join(last.Spec.Args, " "), "DROP DATABASE IF EXISTS") {
+		t.Fatalf("last call = %v, want the scratch drop", last.Spec.Args)
+	}
+	if last.CtxErr != nil {
+		t.Errorf("the drop ran on a cancelled context: %v", last.CtxErr)
+	}
+}
+
+func TestPostgresRejectsDatabaseNamesThatAreConnectionStrings(t *testing.T) {
+	cfg := testConfig(t, "DRIVER", "postgres", "DB_HOST", "pg", "DB_USER", "u", "DB_PASSWORD", "x", "DATABASES", "app,host=evil dbname=app")
+	err := newPostgres(cfg, &proc.Fake{}).Validate()
+	if err == nil || !strings.Contains(err.Error(), "database name host=evil dbname=app must not contain '='") {
+		t.Errorf("error = %v", err)
 	}
 }

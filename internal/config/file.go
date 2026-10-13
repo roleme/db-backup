@@ -122,7 +122,7 @@ func CheckName(name string) error {
 func Load(path string) (*File, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("config %s is not readable", path)
+		return nil, fmt.Errorf("config %s is not readable: %w", path, err)
 	}
 	return Parse(path, b)
 }

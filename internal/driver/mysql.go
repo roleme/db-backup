@@ -70,6 +70,11 @@ func (m *mysql) Validate() error {
 		m.args = append(m.args, "--skip-ssl-verify-server-cert")
 	}
 	m.dbs = config.SplitList(m.cfg.Get("DATABASES"))
+	for _, db := range m.dbs {
+		if strings.HasPrefix(db, "-") {
+			return fmt.Errorf("database name %s must not start with '-'", db)
+		}
+	}
 	if len(m.dbs) == 0 {
 		return errors.New("databases lists no databases")
 	}
@@ -222,8 +227,10 @@ func (m *mysql) Verify(ctx context.Context, unit, path string) error {
 		return err
 	}
 	got, orphans, rerr := m.restore(ctx, scratch, path)
-	if err := m.exec(ctx, "DROP DATABASE IF EXISTS "+quoteMySQL(scratch)); err != nil {
-		logx.Warnf("could not drop %s", scratch)
+	cctx, cancel := cleanupContext(ctx)
+	defer cancel()
+	if err := m.exec(cctx, "DROP DATABASE IF EXISTS "+quoteMySQL(scratch)); err != nil {
+		logx.Warnf("could not drop %s: %v", scratch, err)
 	}
 	if rerr != nil {
 		return rerr

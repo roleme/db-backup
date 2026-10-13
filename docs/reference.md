@@ -108,7 +108,7 @@ Each database, SQLite file or extra path (`<name>`) has its own folder. The four
 
 ## Verification
 
-`verify_schedule` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires at least one table in the restore (for SQLite also a clean `PRAGMA integrity_check`). A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum.
+`verify_schedule` restores the newest dump into a scratch database (`dbb_verify_<name>`, or a temporary file for SQLite) and requires at least one table in the restore (for SQLite also a clean `PRAGMA integrity_check`). A truncated, corrupt or unreplayable dump fails and pings `/fail`. This is a restore test, not just a checksum. If the job is terminated (SIGTERM, or the `timeout` of the runner), the scratch database is still dropped; for PostgreSQL that uses `DROP DATABASE ... WITH (FORCE)`, so servers older than 13 are not supported.
 
 ## Alerting
 

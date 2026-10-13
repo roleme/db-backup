@@ -50,7 +50,7 @@ func TestPathsDumpUsesTarWithoutAShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := f.Calls[0].Spec
-	want := []string{"-C", dir, "-cf", "-", "my keys; rm -rf x"}
+	want := []string{"-C", dir, "-cf", "-", "--", "my keys; rm -rf x"}
 	if got.Name != "tar" || strings.Join(got.Args, "\x00") != strings.Join(want, "\x00") {
 		t.Errorf("call = %s %q", got.Name, got.Args)
 	}
@@ -72,5 +72,24 @@ func TestPathsHasNoTableCounter(t *testing.T) {
 	var a Adapter = newPaths(testConfig(t), &proc.Fake{})
 	if _, ok := a.(TableCounter); ok {
 		t.Error("an archive adapter must not implement TableCounter")
+	}
+}
+
+func TestPathsDumpEndsOptionsBeforeTheDirectoryName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "-odd")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f := &proc.Fake{}
+	p := newPaths(testConfig(t, "EXTRA_PATHS", dir), f)
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Dump(context.Background(), "-odd", &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	args := f.Calls[0].Spec.Args
+	if got := strings.Join(args[len(args)-2:], " "); got != "-- -odd" {
+		t.Errorf("tail of args = %q, want \"-- -odd\"", got)
 	}
 }

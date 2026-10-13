@@ -44,6 +44,9 @@ func (s *sqlite) Validate() error {
 		if err != nil {
 			return err
 		}
+		if !filepath.IsAbs(path) {
+			return fmt.Errorf("paths entry %s must be an absolute path", path)
+		}
 		if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
 			return fmt.Errorf("paths entry %s does not exist", path)
 		}
@@ -182,7 +185,7 @@ func (s *sqlite) Verify(ctx context.Context, unit, path string) error {
 	defer os.Remove(dbCopy)
 	res, err := s.sql(ctx, dbCopy, "PRAGMA integrity_check")
 	if err != nil {
-		return fmt.Errorf("%s: %s", unit, res)
+		return fmt.Errorf("%s: %s: %w", unit, res, err)
 	}
 	got, countErr := s.count(ctx, dbCopy)
 	fk := ""
@@ -196,7 +199,10 @@ func (s *sqlite) Verify(ctx context.Context, unit, path string) error {
 	if res != "ok" {
 		return fmt.Errorf("%s integrity_check: %s", unit, res)
 	}
-	if countErr != nil || got == 0 {
+	if countErr != nil {
+		return fmt.Errorf("%s: cannot count restored tables: %w", unit, countErr)
+	}
+	if got == 0 {
 		return fmt.Errorf("%s restored no tables", unit)
 	}
 	if fk != "" {

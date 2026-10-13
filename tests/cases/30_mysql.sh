@@ -127,3 +127,19 @@ test_mysql_orphan_check_handles_quoted_names() {
   assert_contains "$out" "orphaned" "a table name containing a backtick is checked, not a syntax error"
   pass "mysql orphan check handles quoted names"
 }
+
+test_mysql_verify_cleans_up_when_terminated() {
+  local bk name
+  bk=$(new_volume myterm_bk)
+  name="dbbtest_myterm_$$"
+  local -a env=(-e DRIVER=mysql -e DB_HOST=mysql -e DB_USER=bkp -e DB_PASSWORD=bkppw -e DATABASES=shop)
+  dbb "$bk" "${env[@]}" -- backup > /dev/null
+  in_vol "$bk" 'cd /backups/shop; f=$(readlink latest.sql.gz); printf "CREATE TABLE a (x int);\nSELECT SLEEP(300);\n" | gzip > "$f"'
+  docker run -d --name "$name" --network "$NETWORK" -v "$bk:/backups" --entrypoint db-backup "${env[@]}" "$IMAGE" verify > /dev/null
+  wait_for 30 '[ -n "$(mysql_scratch_dbs)" ]' || { docker rm -f "$name" > /dev/null; fail "verify never started restoring"; }
+  docker kill -s TERM "$name" > /dev/null
+  wait_for 40 '[ "$(docker inspect -f "{{.State.Running}}" "$name")" = false ]' || { docker rm -f "$name" > /dev/null; fail "verify did not stop after SIGTERM"; }
+  docker rm -f "$name" > /dev/null
+  wait_for 20 '[ -z "$(mysql_scratch_dbs)" ]' || fail "scratch database left behind after SIGTERM"
+  pass "mysql verify cleans up when terminated"
+}
