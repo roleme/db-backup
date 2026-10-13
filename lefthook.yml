@@ -1,0 +1,24 @@
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: test -z "$(gofmt -l {staged_files})" || { gofmt -l {staged_files}; exit 1; }
+    vet:
+      glob: "*.go"
+      run: go vet ./...
+    shellcheck:
+      glob: "*.sh"
+      run: shellcheck --severity=warning {staged_files}
+    hygiene:
+      run: test -z "$(tests/hygiene.sh)" || { tests/hygiene.sh; exit 1; }
+
+pre-push:
+  parallel: true
+  commands:
+    race-tests:
+      run: go test -race -count=1 ./...
+    staticcheck:
+      run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+    govulncheck:
+      run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
