@@ -33,9 +33,11 @@ func (r Runner) Run(ctx context.Context, name, action string) int {
 	if backupDir == "" {
 		backupDir = config.DefaultBackupDir
 	}
+	var f *config.File
 	failed := func(err error) int {
 		logx.Errorf("%v", err)
 		r.record(backupDir, name, action, false)
+		r.pingFailure(f, name, action)
 		return 1
 	}
 	f, err := config.Load(r.ConfigFile)
@@ -84,6 +86,26 @@ func (r Runner) Run(ctx context.Context, name, action string) int {
 		return TimeoutExit
 	}
 	return proc.ExitCode(err)
+}
+
+func (r Runner) pingFailure(f *config.File, name, action string) {
+	if f == nil {
+		return
+	}
+	e, ok := f.Entry(name)
+	if !ok {
+		return
+	}
+	var url string
+	switch action {
+	case "backup":
+		url = e.FailPingURL(r.Getenv)
+	case "verify":
+		url = e.VerifyFailPingURL(r.Getenv)
+	}
+	if url != "" {
+		r.Ping.Ping(url, "/fail")
+	}
 }
 
 func (r Runner) record(dir, name, action string, ok bool) {
