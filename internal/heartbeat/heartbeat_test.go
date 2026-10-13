@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/roleme/db-backup/internal/config"
+	"github.com/roleme/db-backup/internal/logx"
 	"github.com/roleme/db-backup/internal/status"
 )
 
@@ -164,5 +165,45 @@ func TestRunRefusesWhatIsNotConfigured(t *testing.T) {
 	}
 	if len(n.calls) != 0 {
 		t.Errorf("nothing may be pinged when the heartbeat cannot be resolved: %+v", n.calls)
+	}
+}
+
+func TestAFutureSuccessTimeIsAProblem(t *testing.T) {
+	f, dir := fixture(t, twoTargets)
+	_ = status.Record(dir, "alpha", "backup", true, now.Add(2*time.Hour))
+	_ = status.Record(dir, "beta", "backup", true, ago(1))
+
+	if got := strings.Join(Problems("dumps", f, dir, now), "\n"); !strings.Contains(got, "alpha: last successful backup is in the future") {
+		t.Errorf("problems = %q", got)
+	}
+}
+
+func TestAnUnreadableStatusIsReportedAsSuch(t *testing.T) {
+	f, dir := fixture(t, twoTargets)
+	sd := filepath.Join(dir, status.Dir)
+	if err := os.MkdirAll(sd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sd, "alpha.backup.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = status.Record(dir, "beta", "backup", true, ago(1))
+
+	got := strings.Join(Problems("dumps", f, dir, now), "\n")
+	if !strings.Contains(got, "alpha: cannot read the status") || strings.Contains(got, "no backup recorded") {
+		t.Errorf("problems = %q", got)
+	}
+}
+
+func TestRunNamesAnInvalidHeartbeatSectionWhenRunByHand(t *testing.T) {
+	f, dir := fixture(t, "heartbeat:\n  ping_url: http://hc\n  shedule: x\ntargets:\n  a: {driver: sqlite}\n")
+	n := &recNotifier{}
+	var out strings.Builder
+	logx.Err = &out
+	defer func() { logx.Err = os.Stderr }()
+
+	code := Run(context.Background(), "dumps", f, Deps{Dir: dir, Getenv: func(string) string { return "" }, Notifier: n, Now: func() time.Time { return now }})
+	if code != 1 || !strings.Contains(out.String(), "field shedule not found") {
+		t.Errorf("code = %d log = %q", code, out.String())
 	}
 }

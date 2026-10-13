@@ -24,7 +24,10 @@ var (
 	listBreaker = strings.NewReplacer(",", "", "\n", "", "\r", "")
 )
 
-const DefaultTimeout = 3600 * time.Second
+const (
+	DefaultTimeout   = 3600 * time.Second
+	maxAgeHoursLimit = 87600
+)
 
 type Target struct {
 	Name    string
@@ -174,6 +177,8 @@ func Parse(path string, b []byte) (*File, error) {
 	return f, nil
 }
 
+func ValidName(name string) bool { return nameRe.MatchString(name) }
+
 func (f *File) Target(name string) (*Target, error) {
 	for _, e := range f.Entries {
 		if e.Name == name {
@@ -308,8 +313,8 @@ func (d heartbeatDoc) heartbeat() (*Heartbeat, error) {
 		if l.hours == nil {
 			continue
 		}
-		if *l.hours < 1 {
-			return nil, fmt.Errorf("%s must be a positive integer", l.field)
+		if *l.hours < 1 || *l.hours > maxAgeHoursLimit {
+			return nil, fmt.Errorf("%s must be between 1 and %d", l.field, maxAgeHoursLimit)
 		}
 		*l.dst = time.Duration(*l.hours) * time.Hour
 	}

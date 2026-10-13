@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	clockSkew           = 5 * time.Minute
 	defaultMaxAge       = 26 * time.Hour
 	defaultVerifyMaxAge = 192 * time.Hour
 )
@@ -49,14 +50,19 @@ func Problems(kind string, f *config.File, dir string, now time.Time) []string {
 		if kind == "verify" && e.Target.Vars["VERIFY_SCHEDULE"] == "" {
 			continue
 		}
-		entry, found := status.Read(dir, e.Name, action)
+		entry, found, err := status.Read(dir, e.Name, action)
 		switch {
+		case err != nil:
+			out = append(out, fmt.Sprintf("%s: cannot read the status: %v", e.Name, err))
 		case !found:
 			out = append(out, fmt.Sprintf("%s: no %s recorded", e.Name, action))
 		case !entry.OK:
 			out = append(out, fmt.Sprintf("%s: last %s failed", e.Name, action))
 		default:
-			if age := now.Sub(time.Unix(entry.LastOK, 0)); age > maxAge {
+			age := now.Sub(time.Unix(entry.LastOK, 0))
+			if age < -clockSkew {
+				out = append(out, fmt.Sprintf("%s: last successful %s is in the future", e.Name, action))
+			} else if age > maxAge {
 				out = append(out, fmt.Sprintf("%s: last successful %s is %d h old", e.Name, action, int(age.Hours())))
 			}
 		}
@@ -70,7 +76,11 @@ func Run(_ context.Context, kind string, f *config.File, d Deps) int {
 		return 2
 	}
 	if f.Heartbeat == nil {
-		logx.Errorf("no heartbeat is configured")
+		if f.HeartbeatErr != nil {
+			logx.Errorf("%v", f.HeartbeatErr)
+		} else {
+			logx.Errorf("no heartbeat is configured")
+		}
 		return 1
 	}
 	dumpsURL, verifyURL, err := f.Heartbeat.URLs(d.Getenv)
