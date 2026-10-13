@@ -264,7 +264,7 @@ func TestLoadAcceptsTLSFields(t *testing.T) {
 		"db": "driver: mysql\ntls: {ca: /certs/ca.pem}",
 		"fp": "driver: mysql\ntls: {fingerprint: \"AA:BB\"}",
 	} {
-		tg, err := loadTarget(t, "targets:\n  "+name+": {"+strings.ReplaceAll(strings.ReplaceAll(body, "\n", ", "), "driver: ", "driver: ")+"}\n", name)
+		tg, err := loadTarget(t, "targets:\n  "+name+": {"+strings.ReplaceAll(body, "\n", ", ")+"}\n", name)
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 			continue

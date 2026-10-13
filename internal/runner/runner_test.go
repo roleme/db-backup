@@ -107,7 +107,7 @@ func (blockUntilCancelled) Run(ctx context.Context, _ proc.Spec) error {
 
 func exitErr(t *testing.T, code int) error {
 	t.Helper()
-	return exec.Command("sh", "-c", "exit "+strconv.Itoa(code)).Run()
+	return exec.CommandContext(t.Context(), "sh", "-c", "exit "+strconv.Itoa(code)).Run()
 }
 
 type counting struct {

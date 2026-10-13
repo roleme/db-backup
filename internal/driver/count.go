@@ -3,6 +3,7 @@ package driver
 import (
 	"bufio"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"regexp"
@@ -14,8 +15,7 @@ type gzFile struct {
 }
 
 func (g gzFile) Close() error {
-	g.Reader.Close()
-	return g.f.Close()
+	return errors.Join(g.Reader.Close(), g.f.Close())
 }
 
 func openGzip(path string) (io.ReadCloser, error) {
