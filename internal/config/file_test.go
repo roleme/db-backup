@@ -328,8 +328,9 @@ func TestHeartbeatErrorsDoNotHideTheTargets(t *testing.T) {
 		"nosched":   {"  ping_url: http://x", "heartbeat: schedule is required with ping_url"},
 		"novsched":  {"  verify_ping_url: http://x", "heartbeat: verify_schedule is required with verify_ping_url"},
 		"badsched":  {"  ping_url: http://x\n  schedule: nonsense", "heartbeat: invalid schedule in schedule: nonsense"},
-		"badlimit":  {"  ping_url: http://x\n  schedule: \"@daily\"\n  max_age_hours: 0", "heartbeat: max_age_hours must be a positive integer"},
-		"badvlimit": {"  verify_ping_url: http://x\n  verify_schedule: \"@daily\"\n  verify_max_age_hours: -1", "heartbeat: verify_max_age_hours must be a positive integer"},
+		"badlimit":  {"  ping_url: http://x\n  schedule: \"@daily\"\n  max_age_hours: 0", "heartbeat: max_age_hours must be between 1 and 87600"},
+		"hugelimit": {"  ping_url: http://x\n  schedule: \"@daily\"\n  max_age_hours: 90000", "heartbeat: max_age_hours must be between 1 and 87600"},
+		"badvlimit": {"  verify_ping_url: http://x\n  verify_schedule: \"@daily\"\n  verify_max_age_hours: -1", "heartbeat: verify_max_age_hours must be between 1 and 87600"},
 	}
 	for name, c := range cases {
 		f := loadFile(t, "heartbeat:\n"+c.section+"\ntargets:\n  a: {driver: sqlite}\n")

@@ -13,6 +13,7 @@ import (
 	"github.com/roleme/db-backup/internal/logx"
 	"github.com/roleme/db-backup/internal/ping"
 	"github.com/roleme/db-backup/internal/proc"
+	"github.com/roleme/db-backup/internal/status"
 )
 
 type Startup struct {
@@ -44,6 +45,22 @@ func (s *Startup) scheduleWorks(ctx context.Context, schedule string) bool {
 func (s *Startup) skip(e config.Entry) {
 	_ = os.WriteFile(s.SkippedFile, nil, 0o600)
 	s.Ping.Ping(e.FailPingURL(s.Getenv), "/fail")
+	if !config.ValidName(e.Name) {
+		return
+	}
+	dir := s.Getenv("BACKUP_DIR")
+	if dir == "" {
+		dir = config.DefaultBackupDir
+	}
+	actions := []string{"backup"}
+	if e.Target != nil && e.Target.Vars["VERIFY_SCHEDULE"] != "" {
+		actions = append(actions, "verify")
+	}
+	for _, action := range actions {
+		if err := status.Record(dir, e.Name, action, false, time.Now()); err != nil {
+			logx.Warnf("cannot record the %s result of %s: %v", action, e.Name, err)
+		}
+	}
 }
 
 func (s *Startup) describe(t *config.Target) ([]string, error) {

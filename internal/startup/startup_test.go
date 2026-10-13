@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/roleme/db-backup/internal/proc"
+	"github.com/roleme/db-backup/internal/status"
 )
 
 type recPinger struct{ got []string }
@@ -338,5 +339,29 @@ func TestSchedulerRejectedHeartbeatScheduleIsSkipped(t *testing.T) {
 	b, _ := os.ReadFile(s.Crontab)
 	if strings.Contains(string(b), "db-backup-heartbeat") {
 		t.Errorf("crontab = %q", b)
+	}
+}
+
+func TestSkippedTargetsRecordAFailedRun(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "good")
+	s, f, _, _ := newStartup(t, env{})
+	okSchedule(f)
+	writeConfig(t, s, `
+targets:
+  good: {driver: sqlite, paths: {good: `+db+`}}
+  broken: {driver: sqlite, paths: {broken: `+db+`}, password_env: NOT_SET, verify_schedule: "0 5 * * 0"}
+`)
+	if code := s.Run(context.Background()); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	dir := s.Getenv("BACKUP_DIR")
+	for _, action := range []string{"backup", "verify"} {
+		if e, ok, _ := status.Read(dir, "broken", action); !ok || e.OK {
+			t.Errorf("%s entry = %+v ok=%v, want a failed run", action, e, ok)
+		}
+	}
+	if _, ok, _ := status.Read(dir, "good", "backup"); ok {
+		t.Error("a target that was scheduled must not get a record at startup")
 	}
 }

@@ -166,7 +166,7 @@ func TestRunRecordsTheOutcomeOfBackupAndVerify(t *testing.T) {
 	if code := r.Run(context.Background(), "one", "backup"); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
-	e, ok := status.Read(dir, "one", "backup")
+	e, ok, _ := status.Read(dir, "one", "backup")
 	if !ok || !e.OK || e.At != 5_000 || e.LastOK != 5_000 {
 		t.Errorf("backup entry = %+v ok=%v", e, ok)
 	}
@@ -175,7 +175,7 @@ func TestRunRecordsTheOutcomeOfBackupAndVerify(t *testing.T) {
 	if code := r.Run(context.Background(), "one", "verify"); code != 7 {
 		t.Fatalf("exit = %d", code)
 	}
-	e, ok = status.Read(dir, "one", "verify")
+	e, ok, _ = status.Read(dir, "one", "verify")
 	if !ok || e.OK || e.LastOK != 0 {
 		t.Errorf("verify entry = %+v ok=%v", e, ok)
 	}
@@ -189,7 +189,7 @@ func TestRunRecordsATimeoutAsAFailure(t *testing.T) {
 	if code := r.Run(context.Background(), "one", "backup"); code != 124 {
 		t.Fatalf("exit = %d", code)
 	}
-	if e, ok := status.Read(dir, "one", "backup"); !ok || e.OK {
+	if e, ok, _ := status.Read(dir, "one", "backup"); !ok || e.OK {
 		t.Errorf("entry = %+v ok=%v, want a failed run", e, ok)
 	}
 }
@@ -201,8 +201,48 @@ func TestRunDoesNotRecordCheckOrNames(t *testing.T) {
 	r.Run(context.Background(), "one", "check")
 	r.Run(context.Background(), "one", "names")
 	for _, action := range []string{"check", "names", "backup", "verify"} {
-		if _, ok := status.Read(dir, "one", action); ok {
+		if _, ok, _ := status.Read(dir, "one", action); ok {
 			t.Errorf("%s must not leave an entry", action)
 		}
+	}
+}
+
+func TestRunPassesTheProxySettingsToTheChild(t *testing.T) {
+	r, f, _ := setup(t, "driver: sqlite")
+	prev := r.Getenv
+	extra := map[string]string{"HTTPS_PROXY": "http://proxy:3128", "no_proxy": "db,localhost", "OTHER_SECRET": "x"}
+	r.Getenv = func(k string) string {
+		if v, ok := extra[k]; ok {
+			return v
+		}
+		return prev(k)
+	}
+	if code := r.Run(context.Background(), "one", "backup"); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	env := strings.Join(f.Calls[0].Spec.Env, "\n")
+	for _, want := range []string{"HTTPS_PROXY=http://proxy:3128", "no_proxy=db,localhost"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("child env lacks %s: %q", want, env)
+		}
+	}
+	if strings.Contains(env, "OTHER_SECRET") || strings.Contains(env, "HTTP_PROXY=") {
+		t.Errorf("only the proxy settings that are set may be passed: %q", env)
+	}
+}
+
+func TestRunRecordsAFailureWhenTheRunnerFailsBeforeStartingTheJob(t *testing.T) {
+	r, _, _ := setup(t, "driver: sqlite, password_env: NOT_SET")
+	r, dir := withBackupDir(t, r)
+
+	if code := r.Run(context.Background(), "one", "backup"); code != 1 {
+		t.Fatalf("exit = %d", code)
+	}
+	if e, ok, _ := status.Read(dir, "one", "backup"); !ok || e.OK {
+		t.Errorf("entry = %+v ok=%v, want a failed run", e, ok)
+	}
+	r.Run(context.Background(), "one", "check")
+	if _, ok, _ := status.Read(dir, "one", "check"); ok {
+		t.Error("check must not leave an entry")
 	}
 }

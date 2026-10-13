@@ -132,8 +132,8 @@ heartbeat:
 | `schedule` | when the dumps heartbeat runs; put it after the last backup of the night |
 | `verify_ping_url` / `verify_ping_url_env` | the check for restore tests; set at most one, and `verify_schedule` with it |
 | `verify_schedule` | when the verify heartbeat runs; put it after the last restore test |
-| `max_age_hours` | how old a target's last successful backup may be, default 26 |
-| `verify_max_age_hours` | the same for restore tests, default 192 (8 days) |
+| `max_age_hours` | how old a target's last successful backup may be, default 26, 1 to 87600 |
+| `verify_max_age_hours` | the same for restore tests, default 192 (8 days), 1 to 87600 |
 
 Every backup and verify run records its outcome under `/backups/.status/`, so the record survives restarts and redeploys. At its schedule the heartbeat reads the records: it pings the URL when every target's last run succeeded within its limit (only targets with a `verify_schedule` count for verify), and sends `/fail` with one line per problem in the body otherwise, for example `alpha: last successful backup is 31 h old`. A target that failed validation counts as a problem for dumps. A missing ping is the alert for a stopped or hung container, as for the per-target pings. The heartbeat adds no check per target, and the per-target pings keep working beside it.
 

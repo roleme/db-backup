@@ -26,37 +26,45 @@ type Runner struct {
 	Now        func() time.Time
 }
 
+var proxyVars = []string{"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"}
+
 func (r Runner) Run(ctx context.Context, name, action string) int {
+	backupDir := r.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = config.DefaultBackupDir
+	}
+	failed := func(err error) int {
+		logx.Errorf("%v", err)
+		r.record(backupDir, name, action, false)
+		return 1
+	}
 	f, err := config.Load(r.ConfigFile)
 	if err != nil {
-		logx.Errorf("%v", err)
-		return 1
+		return failed(err)
 	}
 	t, err := f.Target(name)
 	if err != nil {
-		logx.Errorf("%v", err)
-		return 1
+		return failed(err)
 	}
 	vars, err := t.Resolve(r.Getenv)
 	if err != nil {
-		logx.Errorf("%v", err)
-		return 1
+		return failed(err)
 	}
 	env := []string{"PATH=" + r.Getenv("PATH")}
 	if tz := r.Getenv("TZ"); tz != "" {
 		env = append(env, "TZ="+tz)
 	}
-	backupDir := r.Getenv("BACKUP_DIR")
-	if backupDir == "" {
-		backupDir = config.DefaultBackupDir
+	for _, k := range proxyVars {
+		if v := r.Getenv(k); v != "" {
+			env = append(env, k+"="+v)
+		}
 	}
 	env = append(env, "BACKUP_DIR="+backupDir)
 	env = append(env, config.EnvList(vars)...)
 
 	unlock, err := r.lock(name)
 	if err != nil {
-		logx.Errorf("%v", err)
-		return 1
+		return failed(err)
 	}
 	defer unlock()
 
@@ -79,7 +87,7 @@ func (r Runner) Run(ctx context.Context, name, action string) int {
 }
 
 func (r Runner) record(dir, name, action string, ok bool) {
-	if action != "backup" && action != "verify" {
+	if (action != "backup" && action != "verify") || !config.ValidName(name) {
 		return
 	}
 	now := time.Now
