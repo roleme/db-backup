@@ -2,6 +2,7 @@ package startup
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -117,6 +118,7 @@ func (s *Startup) Run(ctx context.Context) int {
 		logx.Errorf("no valid targets in %s", s.ConfigFile)
 		return 1
 	}
+	tab.WriteString(s.heartbeatLines(ctx, f))
 	if err := os.WriteFile(s.Snapshot, raw, 0o600); err != nil {
 		logx.Errorf("%v", err)
 		return 1
@@ -132,6 +134,41 @@ func (s *Startup) Run(ctx context.Context) int {
 		}
 	}
 	return s.exec(env)
+}
+
+func (s *Startup) heartbeatLines(ctx context.Context, f *config.File) string {
+	if f.HeartbeatErr != nil {
+		logx.Errorf("%v", f.HeartbeatErr)
+		logx.Errorf("skipping the heartbeat")
+		_ = os.WriteFile(s.SkippedFile, nil, 0o600)
+		return ""
+	}
+	if f.Heartbeat == nil {
+		return ""
+	}
+	dumps, verify, err := f.Heartbeat.URLs(s.Getenv)
+	if err != nil {
+		logx.Errorf("heartbeat: %v", err)
+		logx.Errorf("skipping the heartbeat")
+		_ = os.WriteFile(s.SkippedFile, nil, 0o600)
+		return ""
+	}
+	var out strings.Builder
+	for _, l := range []struct{ url, schedule, kind string }{
+		{dumps, f.Heartbeat.Schedule, "dumps"},
+		{verify, f.Heartbeat.VerifySchedule, "verify"},
+	} {
+		if l.url == "" {
+			continue
+		}
+		if !s.scheduleWorks(ctx, l.schedule) {
+			logx.Errorf("skipping the %s heartbeat: the scheduler rejects its schedule", l.kind)
+			_ = os.WriteFile(s.SkippedFile, nil, 0o600)
+			continue
+		}
+		fmt.Fprintf(&out, "%s db-backup-heartbeat %s\n", l.schedule, l.kind)
+	}
+	return out.String()
 }
 
 func (s *Startup) exec(env []string) int {

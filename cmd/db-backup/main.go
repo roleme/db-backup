@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/roleme/db-backup/internal/config"
+	"github.com/roleme/db-backup/internal/heartbeat"
 	"github.com/roleme/db-backup/internal/job"
 	"github.com/roleme/db-backup/internal/logx"
 	"github.com/roleme/db-backup/internal/ping"
@@ -43,6 +44,8 @@ func dispatch(name string, args []string) int {
 	switch name {
 	case "db-backup-run":
 		return runnerRole(ctx, args)
+	case "db-backup-heartbeat":
+		return heartbeatRole(ctx, args)
 	case "entrypoint":
 		return startupRole(ctx)
 	default:
@@ -112,6 +115,24 @@ func runnerRole(ctx context.Context, args []string) int {
 		Ping:       ping.NewHTTP(),
 	}
 	return r.Run(ctx, args[0], args[1])
+}
+
+func heartbeatRole(ctx context.Context, args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: db-backup-heartbeat dumps|verify")
+		return 2
+	}
+	f, err := config.Load(getenvDefault("CONFIG_FILE", defaultConfigFile))
+	if err != nil {
+		logx.Errorf("%v", err)
+		return 1
+	}
+	return heartbeat.Run(ctx, args[0], f, heartbeat.Deps{
+		Dir:      getenvDefault("BACKUP_DIR", config.DefaultBackupDir),
+		Getenv:   os.Getenv,
+		Notifier: ping.NewHTTP(),
+		Now:      time.Now,
+	})
 }
 
 func startupRole(ctx context.Context) int {

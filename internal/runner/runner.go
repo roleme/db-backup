@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/roleme/db-backup/internal/config"
 	"github.com/roleme/db-backup/internal/logx"
 	"github.com/roleme/db-backup/internal/ping"
 	"github.com/roleme/db-backup/internal/proc"
+	"github.com/roleme/db-backup/internal/status"
 )
 
 const TimeoutExit = 124
@@ -21,6 +23,7 @@ type Runner struct {
 	Getenv     func(string) string
 	Exec       proc.Runner
 	Ping       ping.Pinger
+	Now        func() time.Time
 }
 
 func (r Runner) Run(ctx context.Context, name, action string) int {
@@ -43,11 +46,11 @@ func (r Runner) Run(ctx context.Context, name, action string) int {
 	if tz := r.Getenv("TZ"); tz != "" {
 		env = append(env, "TZ="+tz)
 	}
-	if bd := r.Getenv("BACKUP_DIR"); bd != "" {
-		env = append(env, "BACKUP_DIR="+bd)
-	} else {
-		env = append(env, "BACKUP_DIR="+config.DefaultBackupDir)
+	backupDir := r.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = config.DefaultBackupDir
 	}
+	env = append(env, "BACKUP_DIR="+backupDir)
 	env = append(env, config.EnvList(vars)...)
 
 	unlock, err := r.lock(name)
@@ -60,7 +63,9 @@ func (r Runner) Run(ctx context.Context, name, action string) int {
 	runCtx, cancel := context.WithTimeout(ctx, t.Timeout)
 	defer cancel()
 	err = r.Exec.Run(runCtx, proc.Spec{Name: "db-backup", Args: []string{action}, Env: env, Stdout: os.Stdout, Stderr: os.Stderr})
-	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+	timedOut := errors.Is(runCtx.Err(), context.DeadlineExceeded)
+	r.record(backupDir, name, action, err == nil && !timedOut)
+	if timedOut {
 		logx.Errorf("target %s %s timed out after %ds", name, action, int(t.Timeout.Seconds()))
 		switch action {
 		case "backup":
@@ -71,6 +76,19 @@ func (r Runner) Run(ctx context.Context, name, action string) int {
 		return TimeoutExit
 	}
 	return proc.ExitCode(err)
+}
+
+func (r Runner) record(dir, name, action string, ok bool) {
+	if action != "backup" && action != "verify" {
+		return
+	}
+	now := time.Now
+	if r.Now != nil {
+		now = r.Now
+	}
+	if err := status.Record(dir, name, action, ok, now()); err != nil {
+		logx.Warnf("cannot record the %s result of %s: %v", action, name, err)
+	}
 }
 
 func (r Runner) lock(name string) (func(), error) {

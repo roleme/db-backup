@@ -251,3 +251,92 @@ func TestSupercronicRunsAgainstTheSnapshot(t *testing.T) {
 		t.Errorf("env = %v", gotEnv)
 	}
 }
+
+func TestHeartbeatLinesJoinTheCrontab(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "a")
+	s, f, _, _ := newStartup(t, env{"DUMPS_URL": "http://hc/dumps"})
+	okSchedule(f)
+	writeConfig(t, s, `
+heartbeat:
+  ping_url_env: DUMPS_URL
+  schedule: "5 3 * * *"
+  verify_ping_url: http://hc/verify
+  verify_schedule: "30 6 * * 0"
+targets:
+  a: {driver: sqlite, paths: {a: `+db+`}}
+`)
+	if code := s.Run(context.Background()); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	b, _ := os.ReadFile(s.Crontab)
+	for _, want := range []string{"5 3 * * * db-backup-heartbeat dumps\n", "30 6 * * 0 db-backup-heartbeat verify\n"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("crontab %q lacks %q", b, want)
+		}
+	}
+	if _, err := os.Stat(s.SkippedFile); err == nil {
+		t.Error("a valid heartbeat must not mark anything as skipped")
+	}
+}
+
+func TestOnlyTheConfiguredHeartbeatIsScheduled(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "a")
+	s, f, _, _ := newStartup(t, env{})
+	okSchedule(f)
+	writeConfig(t, s, "heartbeat:\n  ping_url: http://hc/dumps\n  schedule: \"5 3 * * *\"\ntargets:\n  a: {driver: sqlite, paths: {a: "+db+"}}\n")
+	if code := s.Run(context.Background()); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	b, _ := os.ReadFile(s.Crontab)
+	if !strings.Contains(string(b), "db-backup-heartbeat dumps") || strings.Contains(string(b), "db-backup-heartbeat verify") {
+		t.Errorf("crontab = %q", b)
+	}
+}
+
+func TestBrokenHeartbeatIsSkippedLoudlyAndTargetsKeepRunning(t *testing.T) {
+	for name, section := range map[string]string{
+		"typo":           "  ping_url: http://hc\n  schedule: \"@daily\"\n  shedule: x",
+		"unset variable": "  ping_url_env: NOT_SET\n  schedule: \"5 3 * * *\"",
+	} {
+		data := t.TempDir()
+		db := addDB(t, data, "a")
+		s, f, _, _ := newStartup(t, env{})
+		okSchedule(f)
+		writeConfig(t, s, "heartbeat:\n"+section+"\ntargets:\n  a: {driver: sqlite, paths: {a: "+db+"}}\n")
+		if code := s.Run(context.Background()); code != 0 {
+			t.Fatalf("%s: exit = %d, the targets must keep running", name, code)
+		}
+		b, _ := os.ReadFile(s.Crontab)
+		if strings.Contains(string(b), "db-backup-heartbeat") || !strings.Contains(string(b), "db-backup-run a backup") {
+			t.Errorf("%s: crontab = %q", name, b)
+		}
+		if _, err := os.Stat(s.SkippedFile); err != nil {
+			t.Errorf("%s: the skipped marker must exist so the container turns unhealthy", name)
+		}
+	}
+}
+
+func TestSchedulerRejectedHeartbeatScheduleIsSkipped(t *testing.T) {
+	data := t.TempDir()
+	db := addDB(t, data, "a")
+	s, f, _, _ := newStartup(t, env{})
+	f.Handler = func(sp proc.Spec) error {
+		if sp.Name == "supercronic" {
+			b, _ := os.ReadFile(sp.Args[len(sp.Args)-1])
+			if strings.Contains(string(b), "99 99 * * *") {
+				return os.ErrInvalid
+			}
+		}
+		return nil
+	}
+	writeConfig(t, s, "heartbeat:\n  ping_url: http://hc\n  schedule: \"99 99 * * *\"\ntargets:\n  a: {driver: sqlite, paths: {a: "+db+"}}\n")
+	if code := s.Run(context.Background()); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	b, _ := os.ReadFile(s.Crontab)
+	if strings.Contains(string(b), "db-backup-heartbeat") {
+		t.Errorf("crontab = %q", b)
+	}
+}

@@ -84,7 +84,7 @@ pings() {
 ping_seen() {
   local out
   out=$(pings)
-  grep -qx "PING GET $1" <<< "$out"
+  grep -qxE "PING (GET|POST) $1" <<< "$out"
 }
 
 wait_for() {
@@ -131,8 +131,20 @@ dbbr() {
     --entrypoint db-backup-run ${flags[@]+"${flags[@]}"} "$IMAGE" "$@"
 }
 
+dbhb() {
+  local vol=$1 flags=()
+  shift
+  while [ "$1" != "--" ]; do
+    flags+=("$1")
+    shift
+  done
+  shift
+  docker run --rm --network "$NETWORK" -v "$vol:/backups" -v "$CONFIG_HOST:/config:ro" \
+    --entrypoint db-backup-heartbeat ${flags[@]+"${flags[@]}"} "$IMAGE" "$@"
+}
+
 ping_count() {
   local out
   out=$(pings)
-  grep -cx "PING GET $1" <<< "$out" || true
+  grep -cxE "PING (GET|POST) $1" <<< "$out" || true
 }

@@ -62,3 +62,38 @@ func TestPingFailureWarnsWithoutTheURL(t *testing.T) {
 func TestEmptyBaseDoesNothing(t *testing.T) {
 	fast(NewHTTP()).Ping("", "/fail")
 }
+
+func TestNotifyPostsTheMessageAndGetsWithoutOne(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = append(got, r.Method+" "+r.URL.Path+" "+string(b))
+	}))
+	defer srv.Close()
+	h := fast(NewHTTP())
+
+	h.Notify(srv.URL+"/abc/", "", "")
+	h.Notify(srv.URL+"/abc", "/fail", "alpha: no backup recorded\nbeta: last backup failed")
+
+	want := "GET /abc ,POST /abc/fail alpha: no backup recorded\nbeta: last backup failed"
+	if strings.Join(got, ",") != want {
+		t.Errorf("requests = %q, want %q", strings.Join(got, ","), want)
+	}
+}
+
+func TestNotifyRetriesAndNeverPanicsOnAnEmptyBase(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+	h := fast(NewHTTP())
+
+	h.Notify(srv.URL, "/fail", "reason")
+	if atomic.LoadInt32(&calls) != 3 {
+		t.Errorf("calls = %d, want 3", calls)
+	}
+	h.Notify("", "/fail", "reason")
+}

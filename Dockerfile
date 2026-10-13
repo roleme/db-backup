@@ -11,6 +11,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/db-backup ./cmd/db-backup \
     && ln /out/db-backup /out/db-backup-run \
+    && ln /out/db-backup /out/db-backup-heartbeat \
     && ln /out/db-backup /out/entrypoint
 
 FROM debian:trixie-slim AS mariadb-dump
