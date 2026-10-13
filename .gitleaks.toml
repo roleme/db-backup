@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "vendored agent skills contain deliberately wrong example credentials"
+paths = ['''^\.agents/skills/''']
