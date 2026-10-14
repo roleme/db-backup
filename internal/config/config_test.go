@@ -25,6 +25,21 @@ func TestFromVarsDefaults(t *testing.T) {
 	if c.Policy.KeepMins != 1440 || c.Policy.KeepDays != 7 || c.Policy.KeepWeeks != 4 || c.Policy.KeepMonths != 6 || c.GzipLevel != 6 {
 		t.Errorf("defaults wrong: %+v gzip=%d", c.Policy, c.GzipLevel)
 	}
+	if c.GzipRsyncable {
+		t.Error("gzip must not be rsyncable by default")
+	}
+}
+
+func TestFromVarsGzipRsyncable(t *testing.T) {
+	for raw, want := range map[string]bool{"": false, "false": false, "true": true} {
+		c, err := FromVars(vars("DRIVER", "sqlite", "GZIP_RSYNCABLE", raw))
+		if err != nil {
+			t.Fatalf("GZIP_RSYNCABLE=%q: %v", raw, err)
+		}
+		if c.GzipRsyncable != want {
+			t.Errorf("GZIP_RSYNCABLE=%q gave %v, want %v", raw, c.GzipRsyncable, want)
+		}
+	}
 }
 
 func TestFromVarsErrors(t *testing.T) {
@@ -37,6 +52,7 @@ func TestFromVarsErrors(t *testing.T) {
 		{[]string{"DRIVER", "sqlite", "KEEP_MINS", "0"}, "KEEP_MINS must be a positive integer"},
 		{[]string{"DRIVER", "sqlite", "KEEP_DAYS", "abc"}, "KEEP_DAYS must be a non-negative integer"},
 		{[]string{"DRIVER", "sqlite", "GZIP_LEVEL", "10"}, "GZIP_LEVEL must be between 1 and 9"},
+		{[]string{"DRIVER", "sqlite", "GZIP_RSYNCABLE", "maybe"}, "GZIP_RSYNCABLE must be true or false"},
 		{[]string{"DRIVER", "sqlite", "BACKUP_DIR", "/nonexistent/dir"}, "BACKUP_DIR /nonexistent/dir is not a writable directory"},
 	}
 	for _, c := range cases {

@@ -33,6 +33,7 @@ type Config struct {
 	BackupDir        string
 	Policy           retention.Policy
 	GzipLevel        int
+	GzipRsyncable    bool
 	ExtraOpts        []string
 	ExtraPaths       string
 	ExcludeTableData string
@@ -149,6 +150,13 @@ func FromVars(vars map[string]string) (*Config, error) {
 	}
 	if c.GzipLevel, err = intVar(vars, "GZIP_LEVEL", defaultGzipLevel, gzipRe, "must be between 1 and 9"); err != nil {
 		return nil, err
+	}
+	switch vars["GZIP_RSYNCABLE"] {
+	case "", "false":
+	case "true":
+		c.GzipRsyncable = true
+	default:
+		return nil, errors.New("GZIP_RSYNCABLE must be true or false")
 	}
 	if !writable(c.BackupDir) {
 		return nil, errors.New("BACKUP_DIR " + c.BackupDir + " is not a writable directory")

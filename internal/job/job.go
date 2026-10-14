@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/roleme/db-backup/internal/ping"
 	"github.com/roleme/db-backup/internal/proc"
 	"github.com/roleme/db-backup/internal/retention"
+	"github.com/roleme/db-backup/internal/rsyncgz"
 )
 
 const PartialMaxAge = 60 * time.Minute
@@ -105,6 +107,13 @@ func (j *Job) sweep(u unit) {
 	}
 }
 
+func (j *Job) newCompressor(w io.Writer) (io.WriteCloser, error) {
+	if j.cfg.GzipRsyncable {
+		return rsyncgz.NewWriter(w, j.cfg.GzipLevel)
+	}
+	return gzip.NewWriterLevel(w, j.cfg.GzipLevel)
+}
+
 func (j *Job) backupOne(ctx context.Context, u unit) error {
 	tmp, err := os.CreateTemp(j.cfg.BackupDir, "."+u.name+".partial.*")
 	if err != nil {
@@ -116,7 +125,7 @@ func (j *Job) backupOne(ctx context.Context, u unit) error {
 		os.Remove(path)
 		return err
 	}
-	gz, err := gzip.NewWriterLevel(tmp, j.cfg.GzipLevel)
+	gz, err := j.newCompressor(tmp)
 	if err != nil {
 		return fail(err)
 	}

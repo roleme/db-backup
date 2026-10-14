@@ -66,6 +66,7 @@ The file is parsed, not executed. The only top-level key is `targets`, a mapping
 | `ping_url`, `verify_ping_url` (or `ping_url_env`, `verify_ping_url_env`) | pinged after a successful run; `/fail` is appended on failure or timeout. Each pair takes at most one |
 | `keep.mins`, `keep.days`, `keep.weeks`, `keep.months` | retention per tier, defaults 1440, 7, 4, 6 |
 | `gzip_level` | 1 to 9, default 6 |
+| `gzip_rsyncable` | `true` writes the gzip as independent members cut at content-defined points, like `gzip --rsyncable`, so two dumps of nearly identical data share most of their compressed bytes and deduplicating backup tools store only the difference. The file stays a normal `.gz`; default `false` |
 | `timeout` | seconds before a run is killed, default 3600 |
 
 List items must not contain a comma or a line break, and `extra_opts` items must not contain whitespace.

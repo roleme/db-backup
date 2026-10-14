@@ -49,6 +49,7 @@ targets:
     verify_ping_url_env: FULL_VERIFY_URL
     keep: {mins: 60, days: 3, weeks: 2, months: 0}
     gzip_level: 9
+    gzip_rsyncable: true
     timeout: 120
 `, "full")
 	if err != nil {
@@ -62,7 +63,7 @@ targets:
 		"SCHEDULE": "20 1 * * *", "VERIFY_SCHEDULE": "@weekly",
 		"HC_PING_URL": "http://x/ping", "HC_VERIFY_PING_URL_ENV": "FULL_VERIFY_URL",
 		"KEEP_MINS": "60", "KEEP_DAYS": "3", "KEEP_WEEKS": "2", "KEEP_MONTHS": "0",
-		"GZIP_LEVEL": "9",
+		"GZIP_LEVEL": "9", "GZIP_RSYNCABLE": "true",
 	}
 	for k, v := range want {
 		if tg.Vars[k] != v {
@@ -112,6 +113,7 @@ func TestLoadTargetErrors(t *testing.T) {
 		"negkeep":   {"driver: sqlite\nkeep: {days: -1}", "target negkeep: keep.days must be a non-negative integer"},
 		"zeromins":  {"driver: sqlite\nkeep: {mins: 0}", "target zeromins: keep.mins must be a positive integer"},
 		"badgzip":   {"driver: sqlite\ngzip_level: 10", "target badgzip: gzip_level must be between 1 and 9"},
+		"badrsync":  {"driver: sqlite\ngzip_rsyncable: maybe", "target badrsync:"},
 		"badport":   {"driver: mysql\nport: abc", "target badport:"},
 		"comma":     {"driver: postgres\ndatabases: [\"a,b\"]", "target comma: databases entry a,b must not contain a comma or a line break"},
 		"commapath": {"driver: sqlite\npaths: {a: \"/x,y\"}", "target commapath: paths entry a must not contain a comma or a line break"},
