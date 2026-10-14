@@ -1,7 +1,11 @@
 package job
 
 import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -210,5 +214,76 @@ func TestNamesListsDumpFileNames(t *testing.T) {
 	got, err := j.Names()
 	if err != nil || strings.Join(got, ",") != "app.db.gz" {
 		t.Errorf("Names = %v, %v", got, err)
+	}
+}
+
+func TestBackupRsyncableWritesOneReadableGzipOfManyMembers(t *testing.T) {
+	var want []byte
+	for len(want) < 700<<10 {
+		want = append(want, "row of dump text with numbers 1234567890.123456\n"...)
+	}
+	f := &proc.Fake{Handler: func(s proc.Spec) error {
+		joined := strings.Join(s.Args, " ")
+		switch {
+		case strings.Contains(joined, "VACUUM INTO"):
+			for _, a := range s.Args {
+				if strings.HasPrefix(a, "VACUUM INTO '") {
+					return os.WriteFile(strings.TrimSuffix(strings.TrimPrefix(a, "VACUUM INTO '"), "'"), want, 0o600)
+				}
+			}
+		case strings.Contains(joined, "select count(*)") && s.Stdout != nil:
+			_, _ = io.WriteString(s.Stdout, "3\n")
+		}
+		return nil
+	}}
+	j, _, bk := newJob(t, f, "GZIP_RSYNCABLE", "true")
+	if err := j.Backup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(filepath.Join(bk, "app", "latest.db.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	zr, err := gzip.NewReader(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("the dump did not round-trip: got %d bytes, want %d", len(got), len(want))
+	}
+	if members := countMembers(t, filepath.Join(bk, "app", "latest.db.gz")); members < 2 {
+		t.Errorf("a 700 KiB dump produced %d gzip member(s), want several", members)
+	}
+}
+
+func countMembers(t *testing.T, path string) int {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	br := bufio.NewReader(f)
+	zr, err := gzip.NewReader(br)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for {
+		zr.Multistream(false)
+		if _, err := io.Copy(io.Discard, zr); err != nil {
+			t.Fatal(err)
+		}
+		n++
+		if err := zr.Reset(br); errors.Is(err, io.EOF) {
+			return n
+		} else if err != nil {
+			t.Fatal(err)
+		}
 	}
 }

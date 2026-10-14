@@ -103,6 +103,7 @@ type doc struct {
 	VerifyPingURLEnv string            `yaml:"verify_ping_url_env"`
 	Keep             keep              `yaml:"keep"`
 	GzipLevel        *int              `yaml:"gzip_level"`
+	GzipRsyncable    *bool             `yaml:"gzip_rsyncable"`
 	Timeout          *int              `yaml:"timeout"`
 }
 
@@ -459,6 +460,9 @@ func (d doc) target(name string) (*Target, error) {
 			return nil, errors.New("gzip_level must be between 1 and 9")
 		}
 		t.Vars["GZIP_LEVEL"] = strconv.Itoa(*d.GzipLevel)
+	}
+	if d.GzipRsyncable != nil {
+		t.Vars["GZIP_RSYNCABLE"] = strconv.FormatBool(*d.GzipRsyncable)
 	}
 	if d.Timeout != nil {
 		if *d.Timeout < 1 {
