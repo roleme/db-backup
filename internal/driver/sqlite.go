@@ -123,7 +123,7 @@ func (s *sqlite) Dump(ctx context.Context, unit string, w io.Writer) error {
 	dbCopy := filepath.Join(dir, "db")
 	err = s.run.Run(ctx, proc.Spec{
 		Name:   "sqlite3",
-		Args:   []string{"-cmd", ".timeout " + sqliteBusyTimeoutMs, s.files[unit], "VACUUM INTO " + quoteSQLiteString(dbCopy)},
+		Args:   []string{"-readonly", "-cmd", ".timeout " + sqliteBusyTimeoutMs, s.files[unit], "VACUUM INTO " + quoteSQLiteString(dbCopy)},
 		Env:    proc.BaseEnv(),
 		Stdout: io.Discard,
 	})
