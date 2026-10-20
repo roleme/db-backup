@@ -106,3 +106,33 @@ test_sqlite_named_paths_tell_same_file_names_apart() {
   assert_contains "$out" "two files named db" "unnamed collision message"
   pass "sqlite named paths tell same file names apart"
 }
+
+test_sqlite_read_only_mount_needs_wal_sidecars() {
+  local data bk writer out rc=0
+  data=$(new_volume ro_data)
+  bk=$(new_volume ro_bk)
+  sqlite_data "$data"
+  local -a env=(-v "$data:/data:ro" -e DRIVER=sqlite -e SQLITE_PATHS=/data/app.db)
+
+  dbb "$bk" "${env[@]}" -- backup > /dev/null || fail "read-only mount: rollback-journal backup failed"
+  out=$(in_vol "$bk" 'gunzip -c /backups/app/latest.db.gz > /tmp/x.db; sqlite3 /tmp/x.db "select group_concat(x) from notes"')
+  assert_eq "$out" "1,2" "read-only mount: rollback-journal dump content"
+
+  docker run --rm -v "$data:/data" --user 1000:1000 --entrypoint sqlite3 "$IMAGE" /data/app.db "PRAGMA journal_mode=WAL;" > /dev/null
+  out=$(dbb "$bk" "${env[@]}" -- backup 2>&1) || rc=$?
+  assert_eq "$rc" 1 "read-only mount: idle WAL database must fail instead of silently dumping stale data"
+  assert_contains "$out" "unable to open database file" "read-only mount: idle WAL error names the cause"
+
+  writer=dbbtest_rowriter_$$
+  docker run -d --name "$writer" -v "$data:/data" --user 1000:1000 --entrypoint sqlite3 "$IMAGE" /data/app.db \
+    "PRAGMA wal_autocheckpoint=0;" "INSERT INTO notes VALUES (3);" ".shell sleep 60" > /dev/null
+  sleep 3
+  if ! dbb "$bk" "${env[@]}" -- backup > /dev/null; then
+    docker rm -fv "$writer" > /dev/null
+    fail "read-only mount: live WAL writer backup failed"
+  fi
+  docker rm -fv "$writer" > /dev/null
+  out=$(in_vol "$bk" 'gunzip -c /backups/app/latest.db.gz > /tmp/x.db; sqlite3 /tmp/x.db "select group_concat(x) from notes"')
+  assert_eq "$out" "1,2,3" "read-only mount: uncheckpointed WAL rows are in the dump"
+  pass "sqlite read-only mount needs wal sidecars"
+}

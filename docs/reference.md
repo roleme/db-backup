@@ -91,7 +91,7 @@ Give the backup its own user per database.
   GRANT SHOW_ROUTINE ON *.* TO 'backup'@'%';
   GRANT ALL ON `dbb\_verify\_%`.* TO 'backup'@'%';
   ```
-- **SQLite:** mount the application's data **directory** read-write. The dump uses `VACUUM INTO`, which reads one consistent snapshot even while the application writes, produces a compacted copy and needs the `-wal` and `-shm` files next to the database; a read-only or single-file mount cannot open a WAL database.
+- **SQLite:** mount the application's data **directory** read-write. The dump runs `VACUUM INTO` over a read-only connection: it reads one consistent snapshot even while the application writes, produces a compacted copy and never modifies the source database. The mount is read-write only because SQLite needs the `-wal` and `-shm` files next to a WAL database. A read-only mount does work for a rollback-journal database and for a WAL database whose application keeps a connection open (the sidecar files exist), but an idle WAL database — closed cleanly, no `-wal`/`-shm` on disk — cannot be opened read-only at all (`unable to open database file`), so read-write is the safe default. A single-file mount cannot open a WAL database either.
 
 ## Excluding table rows
 

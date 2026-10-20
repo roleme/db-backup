@@ -124,3 +124,35 @@ func TestSQLiteRejectsRelativePaths(t *testing.T) {
 		t.Errorf("error = %v", err)
 	}
 }
+
+func TestSQLiteDumpOpensTheSourceReadOnly(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "app.db")
+	if err := os.WriteFile(src, []byte("sqlite-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var vacuum []string
+	f := &proc.Fake{Handler: func(s proc.Spec) error {
+		for _, a := range s.Args {
+			if strings.HasPrefix(a, "VACUUM INTO '") {
+				vacuum = s.Args
+				p := strings.TrimSuffix(strings.TrimPrefix(a, "VACUUM INTO '"), "'")
+				return os.WriteFile(p, []byte("copy"), 0o600)
+			}
+		}
+		return nil
+	}}
+	s := newSQLite(testConfig(t, "SQLITE_PATHS", src), f)
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := s.Dump(context.Background(), "app", &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(vacuum) == 0 || vacuum[0] != "-readonly" {
+		t.Errorf("sqlite3 args = %v, want -readonly before the source path", vacuum)
+	}
+	if out.String() != "copy" {
+		t.Errorf("dump = %q, want the vacuumed copy", out.String())
+	}
+}
