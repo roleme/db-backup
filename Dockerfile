@@ -1,6 +1,6 @@
 FROM golang:1.26 AS supercronic
 
-RUN CGO_ENABLED=0 GOBIN=/out go install github.com/aptible/supercronic@v0.2.49
+RUN CGO_ENABLED=0 GOBIN=/out go install github.com/aptible/supercronic@v0.2.51
 
 FROM golang:1.26 AS build
 
