@@ -1,8 +1,8 @@
-FROM golang:1.26 AS supercronic
+FROM golang:1.27 AS supercronic
 
 RUN CGO_ENABLED=0 GOBIN=/out go install github.com/aptible/supercronic@v0.2.49
 
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
