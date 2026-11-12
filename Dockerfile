@@ -33,7 +33,7 @@ RUN apt-get update \
 FROM debian:trixie-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libpq5 liblz4-1 libreadline8t64 libzstd1 mariadb-client-core procps sqlite3 tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates libpq5 liblz4-1 libreadline8t64 libzstd1 mariadb-client-core procps sqlite3 tzdata zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=pg-client /usr/lib/postgresql/16 /usr/lib/postgresql/16
