@@ -64,7 +64,7 @@ The file is parsed, not executed. The only top-level key is `targets`, a mapping
 | `exclude_table_data` | list of tables whose rows are skipped; their schema is kept |
 | `schedule`, `verify_schedule` | cron expressions (a seconds field is accepted); the defaults are `@daily` and no verification |
 | `ping_url`, `verify_ping_url` (or `ping_url_env`, `verify_ping_url_env`) | pinged after a successful run; `/fail` is appended on failure or timeout. Each pair takes at most one |
-| `keep.mins`, `keep.days`, `keep.weeks`, `keep.months` | retention per tier, defaults 1440, 7, 4, 6 |
+| `keep.last`, `keep.days`, `keep.weeks`, `keep.months` | copies kept per tier, defaults 1, 7, 4, 6 |
 | `gzip_level` | 1 to 9, default 6 |
 | `gzip_rsyncable` | `true` writes the gzip as independent members cut at content-defined points, like `gzip --rsyncable`, so two dumps of nearly identical data share most of their compressed bytes and deduplicating backup tools store only the difference. The file stays a normal `.gz`; default `false` |
 | `timeout` | seconds before a run is killed, default 3600 |
@@ -105,7 +105,7 @@ Give the backup its own user per database.
 /backups/<name>/daily/<name>-<yyyymmdd>...   weekly/ (ISO week)   monthly/ (yyyymm)
 ```
 
-Each database, SQLite file or extra path (`<name>`) has its own folder. The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times: `last` drops files older than `keep.mins` minutes, `daily` files stamped before today minus `keep.days` days, `weekly` ISO weeks that started more than `keep.weeks` weeks before the start of this week, and `monthly` months that started before the first of this month minus `keep.months` months. The period in progress counts in addition to the kept ones: `keep.days: 7` keeps today and the 7 days before it. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
+Each database, SQLite file or extra path (`<name>`) has its own folder. The four tiers are hardlinks of one file, so keeping all of them costs one copy. Retention is counted from the stamp in each file name, not from file times. `last` keeps the newest `keep.last` dumps (at least 1). `daily`, `weekly` and `monthly` keep the copies of the last `keep.days` days, `keep.weeks` ISO weeks and `keep.months` months, the period in progress included: `keep.days: 7` keeps today and the 6 days before it, and `0` keeps no copy in that tier. A dump is written to a temporary file and moved into place only after it completed, so a failed or killed run never leaves a dump that looks valid; temporary files older than an hour are removed at the start of each backup. A dump that contains no tables is treated as a failure.
 
 ## Verification
 

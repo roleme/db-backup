@@ -25,7 +25,7 @@ func exists(dir, tier, name string) bool {
 }
 
 func newStore(dir string, now time.Time) Store {
-	return Store{Dir: dir, Policy: Policy{KeepMins: 1440, KeepDays: 7, KeepWeeks: 4, KeepMonths: 6}, Now: func() time.Time { return now }}
+	return Store{Dir: dir, Policy: Policy{KeepLast: 1, KeepDays: 7, KeepWeeks: 4, KeepMonths: 6}, Now: func() time.Time { return now }}
 }
 
 func writeTmp(t *testing.T, dir, name string) string {
@@ -43,9 +43,9 @@ func TestPruneByStampAndUnit(t *testing.T) {
 	s := newStore(dir, at("2026-10-07 12:00"))
 	files := map[string][]string{
 		"last":    {"app-20261006-110000.db.gz", "app-20261006-130000.db.gz", "app-2-20200101-010000.db.gz"},
-		"daily":   {"app-20260929.db.gz", "app-20260930.db.gz", "app-2-20200101.db.gz", "app-extra-20200101.db.gz"},
-		"weekly":  {"app-202636.db.gz", "app-202637.db.gz", "app-2-202001.db.gz"},
-		"monthly": {"app-202603.db.gz", "app-202604.db.gz", "app-2-202001.db.gz"},
+		"daily":   {"app-20260930.db.gz", "app-20261001.db.gz", "app-2-20200101.db.gz", "app-extra-20200101.db.gz"},
+		"weekly":  {"app-202637.db.gz", "app-202638.db.gz", "app-2-202001.db.gz"},
+		"monthly": {"app-202604.db.gz", "app-202605.db.gz", "app-2-202001.db.gz"},
 	}
 	for tier, names := range files {
 		for _, n := range names {
@@ -57,15 +57,15 @@ func TestPruneByStampAndUnit(t *testing.T) {
 	}
 	gone := map[string][]string{
 		"last":    {"app-20261006-110000.db.gz"},
-		"daily":   {"app-20260929.db.gz"},
-		"weekly":  {"app-202636.db.gz"},
-		"monthly": {"app-202603.db.gz"},
+		"daily":   {"app-20260930.db.gz"},
+		"weekly":  {"app-202637.db.gz"},
+		"monthly": {"app-202604.db.gz"},
 	}
 	kept := map[string][]string{
 		"last":    {"app-20261006-130000.db.gz", "app-2-20200101-010000.db.gz"},
-		"daily":   {"app-20260930.db.gz", "app-2-20200101.db.gz", "app-extra-20200101.db.gz"},
-		"weekly":  {"app-202637.db.gz", "app-2-202001.db.gz"},
-		"monthly": {"app-202604.db.gz", "app-2-202001.db.gz"},
+		"daily":   {"app-20261001.db.gz", "app-2-20200101.db.gz", "app-extra-20200101.db.gz"},
+		"weekly":  {"app-202638.db.gz", "app-2-202001.db.gz"},
+		"monthly": {"app-202605.db.gz", "app-2-202001.db.gz"},
 	}
 	for tier, names := range gone {
 		for _, n := range names {
@@ -88,15 +88,15 @@ func TestPruneIgnoresMtime(t *testing.T) {
 	app := filepath.Join(dir, "app")
 	now := at("2026-10-07 12:00")
 	s := newStore(dir, now)
-	touch(t, app, "daily", "app-20260930.db.gz")
+	touch(t, app, "daily", "app-20261001.db.gz")
 	old := now.AddDate(-5, 0, 0)
-	if err := os.Chtimes(filepath.Join(app, "daily", "app-20260930.db.gz"), old, old); err != nil {
+	if err := os.Chtimes(filepath.Join(app, "daily", "app-20261001.db.gz"), old, old); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Prune("app", ".db.gz"); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(app, "daily", "app-20260930.db.gz") {
+	if !exists(app, "daily", "app-20261001.db.gz") {
 		t.Error("age must come from the stamp, not the file time")
 	}
 }
@@ -228,21 +228,18 @@ func TestPruneNeverTouchesLegacyFlatTiers(t *testing.T) {
 	}
 }
 
-func TestPruneWeeklyKeepsTheCurrentWeekWhenKeepWeeksIsZero(t *testing.T) {
+func TestPruneWeeklyKeepsNothingWhenKeepWeeksIsZero(t *testing.T) {
 	for _, day := range []string{"2026-10-05 12:00", "2026-10-06 12:00", "2026-10-11 12:00"} {
 		dir := t.TempDir()
 		app := filepath.Join(dir, "app")
-		s := Store{Dir: dir, Policy: Policy{KeepMins: 1440, KeepWeeks: 0}, Now: func() time.Time { return at(day) }}
+		s := Store{Dir: dir, Policy: Policy{KeepLast: 1, KeepWeeks: 0}, Now: func() time.Time { return at(day) }}
 		touch(t, app, "weekly", "app-202641.db.gz")
 		touch(t, app, "weekly", "app-202640.db.gz")
 		if err := s.Prune("app", ".db.gz"); err != nil {
 			t.Fatal(err)
 		}
-		if !exists(app, "weekly", "app-202641.db.gz") {
-			t.Errorf("%s: this week's copy must survive KeepWeeks=0", day)
-		}
-		if exists(app, "weekly", "app-202640.db.gz") {
-			t.Errorf("%s: last week's copy must go with KeepWeeks=0", day)
+		if exists(app, "weekly", "app-202641.db.gz") || exists(app, "weekly", "app-202640.db.gz") {
+			t.Errorf("%s: KeepWeeks=0 must keep no weekly copy", day)
 		}
 	}
 }
@@ -252,7 +249,7 @@ func TestPruneWeeklyKeepsTheSameNumberOnEveryWeekday(t *testing.T) {
 		dir := t.TempDir()
 		app := filepath.Join(dir, "app")
 		now := time.Date(2026, 10, d, 12, 0, 0, 0, time.UTC)
-		s := Store{Dir: dir, Policy: Policy{KeepMins: 1440, KeepWeeks: 4}, Now: func() time.Time { return now }}
+		s := Store{Dir: dir, Policy: Policy{KeepLast: 1, KeepWeeks: 4}, Now: func() time.Time { return now }}
 		for w := 36; w <= 41; w++ {
 			touch(t, app, "weekly", "app-2026"+strconv.Itoa(w)+".db.gz")
 		}
@@ -265,8 +262,61 @@ func TestPruneWeeklyKeepsTheSameNumberOnEveryWeekday(t *testing.T) {
 				kept++
 			}
 		}
-		if kept != 5 || exists(app, "weekly", "app-202636.db.gz") {
-			t.Errorf("2026-10-%02d: kept %d weekly copies, want this week plus 4", d, kept)
+		if kept != 4 || !exists(app, "weekly", "app-202638.db.gz") || exists(app, "weekly", "app-202637.db.gz") {
+			t.Errorf("2026-10-%02d: kept %d weekly copies, want 4 including this week", d, kept)
+		}
+	}
+}
+
+func TestPruneDailyKeepsKeepDaysCopies(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "app")
+	s := newStore(dir, at("2026-11-12 02:05"))
+	for d := 5; d <= 12; d++ {
+		touch(t, app, "daily", "app-202611"+strconv.Itoa(100 + d)[1:]+".db.gz")
+	}
+	if err := s.Prune("app", ".db.gz"); err != nil {
+		t.Fatal(err)
+	}
+	if exists(app, "daily", "app-20261105.db.gz") {
+		t.Error("the eighth daily copy must go with KeepDays=7")
+	}
+	for d := 6; d <= 12; d++ {
+		if n := "app-202611" + strconv.Itoa(100 + d)[1:] + ".db.gz"; !exists(app, "daily", n) {
+			t.Errorf("daily/%s should be kept", n)
+		}
+	}
+}
+
+func TestPruneLastKeepsTheNewestKeepLastDumps(t *testing.T) {
+	cases := []struct {
+		keep int
+		kept []string
+		gone []string
+	}{
+		{1, []string{"app-20261112-020503.db.gz"}, []string{"app-20261111-020507.db.gz", "app-20261110-020501.db.gz"}},
+		{2, []string{"app-20261112-020503.db.gz", "app-20261111-020507.db.gz"}, []string{"app-20261110-020501.db.gz"}},
+		{5, []string{"app-20261112-020503.db.gz", "app-20261111-020507.db.gz", "app-20261110-020501.db.gz"}, nil},
+	}
+	for _, c := range cases {
+		dir := t.TempDir()
+		app := filepath.Join(dir, "app")
+		s := Store{Dir: dir, Policy: Policy{KeepLast: c.keep, KeepDays: 7}, Now: func() time.Time { return time.Date(2026, 11, 12, 2, 5, 4, 0, time.UTC) }}
+		for _, n := range []string{"app-20261110-020501.db.gz", "app-20261111-020507.db.gz", "app-20261112-020503.db.gz", "app-2-20200101-010000.db.gz"} {
+			touch(t, app, "last", n)
+		}
+		if err := s.Prune("app", ".db.gz"); err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range append(c.kept, "app-2-20200101-010000.db.gz") {
+			if !exists(app, "last", n) {
+				t.Errorf("KeepLast=%d: last/%s should be kept", c.keep, n)
+			}
+		}
+		for _, n := range c.gone {
+			if exists(app, "last", n) {
+				t.Errorf("KeepLast=%d: last/%s should be pruned", c.keep, n)
+			}
 		}
 	}
 }

@@ -57,7 +57,7 @@ func TestParseWeekStartsOnMonday(t *testing.T) {
 func TestCutoffMonthsCountFromFirstOfMonth(t *testing.T) {
 	p := Policy{KeepMonths: 1}
 	got := p.cutoff(Monthly, at("2026-03-31 09:00"))
-	if want := at("2026-02-01 00:00"); !got.Equal(want) {
+	if want := at("2026-03-01 00:00"); !got.Equal(want) {
 		t.Errorf("cutoff = %s, want %s", got, want)
 	}
 }
@@ -69,7 +69,7 @@ func TestCutoffDaysAcrossDST(t *testing.T) {
 	}
 	now := time.Date(2026, 3, 30, 12, 0, 0, 0, loc)
 	got := Policy{KeepDays: 2}.cutoff(Daily, now)
-	if want := time.Date(2026, 3, 28, 0, 0, 0, 0, loc); !got.Equal(want) {
+	if want := time.Date(2026, 3, 29, 0, 0, 0, 0, loc); !got.Equal(want) {
 		t.Errorf("cutoff = %s, want %s", got, want)
 	}
 }

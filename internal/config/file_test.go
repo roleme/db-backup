@@ -47,7 +47,7 @@ targets:
     verify_schedule: "@weekly"
     ping_url: http://x/ping
     verify_ping_url_env: FULL_VERIFY_URL
-    keep: {mins: 60, days: 3, weeks: 2, months: 0}
+    keep: {last: 3, days: 3, weeks: 2, months: 0}
     gzip_level: 9
     gzip_rsyncable: true
     timeout: 120
@@ -62,7 +62,7 @@ targets:
 		"EXTRA_OPTS": "--single-transaction --quick", "EXCLUDE_TABLE_DATA": "logs,history",
 		"SCHEDULE": "20 1 * * *", "VERIFY_SCHEDULE": "@weekly",
 		"HC_PING_URL": "http://x/ping", "HC_VERIFY_PING_URL_ENV": "FULL_VERIFY_URL",
-		"KEEP_MINS": "60", "KEEP_DAYS": "3", "KEEP_WEEKS": "2", "KEEP_MONTHS": "0",
+		"KEEP_LAST": "3", "KEEP_DAYS": "3", "KEEP_WEEKS": "2", "KEEP_MONTHS": "0",
 		"GZIP_LEVEL": "9", "GZIP_RSYNCABLE": "true",
 	}
 	for k, v := range want {
@@ -111,7 +111,8 @@ func TestLoadTargetErrors(t *testing.T) {
 		"badvsch":   {"driver: sqlite\nverify_schedule: nonsense", "target badvsch: invalid schedule in verify_schedule: nonsense"},
 		"badtime":   {"driver: sqlite\ntimeout: 0", "target badtime: timeout must be a positive number of seconds"},
 		"negkeep":   {"driver: sqlite\nkeep: {days: -1}", "target negkeep: keep.days must be a non-negative integer"},
-		"zeromins":  {"driver: sqlite\nkeep: {mins: 0}", "target zeromins: keep.mins must be a positive integer"},
+		"zerolast":  {"driver: sqlite\nkeep: {last: 0}", "target zerolast: keep.last must be a positive integer"},
+		"oldmins":   {"driver: sqlite\nkeep: {mins: 60}", "target oldmins:"},
 		"badgzip":   {"driver: sqlite\ngzip_level: 10", "target badgzip: gzip_level must be between 1 and 9"},
 		"badrsync":  {"driver: sqlite\ngzip_rsyncable: maybe", "target badrsync:"},
 		"badport":   {"driver: mysql\nport: abc", "target badport:"},

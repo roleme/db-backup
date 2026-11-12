@@ -22,7 +22,7 @@ func TestFromVarsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Policy.KeepMins != 1440 || c.Policy.KeepDays != 7 || c.Policy.KeepWeeks != 4 || c.Policy.KeepMonths != 6 || c.GzipLevel != 6 {
+	if c.Policy.KeepLast != 1 || c.Policy.KeepDays != 7 || c.Policy.KeepWeeks != 4 || c.Policy.KeepMonths != 6 || c.GzipLevel != 6 {
 		t.Errorf("defaults wrong: %+v gzip=%d", c.Policy, c.GzipLevel)
 	}
 	if c.GzipRsyncable {
@@ -49,7 +49,7 @@ func TestFromVarsErrors(t *testing.T) {
 	}{
 		{[]string{}, "driver is required"},
 		{[]string{"DRIVER", "oracle"}, "driver must be postgres, mysql or sqlite (got 'oracle')"},
-		{[]string{"DRIVER", "sqlite", "KEEP_MINS", "0"}, "KEEP_MINS must be a positive integer"},
+		{[]string{"DRIVER", "sqlite", "KEEP_LAST", "0"}, "KEEP_LAST must be a positive integer"},
 		{[]string{"DRIVER", "sqlite", "KEEP_DAYS", "abc"}, "KEEP_DAYS must be a non-negative integer"},
 		{[]string{"DRIVER", "sqlite", "GZIP_LEVEL", "10"}, "GZIP_LEVEL must be between 1 and 9"},
 		{[]string{"DRIVER", "sqlite", "GZIP_RSYNCABLE", "maybe"}, "GZIP_RSYNCABLE must be true or false"},
