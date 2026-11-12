@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -106,21 +107,34 @@ func (s Store) Prune(unit, suffix string) error {
 		if err != nil {
 			return err
 		}
-		re := pattern(unit, t, suffix)
-		cutoff := s.Policy.cutoff(t, now)
-		for _, e := range entries {
-			m := re.FindStringSubmatch(e.Name())
-			if m == nil {
-				continue
-			}
-			stamped, err := Parse(t, m[1], now.Location())
-			if err != nil || !stamped.Before(cutoff) {
-				continue
-			}
-			if err := os.Remove(filepath.Join(s.tierDir(unit, t), e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		for _, name := range s.expired(unit, t, suffix, entries, now) {
+			if err := os.Remove(filepath.Join(s.tierDir(unit, t), name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (s Store) expired(unit string, t Tier, suffix string, entries []fs.DirEntry, now time.Time) []string {
+	re := pattern(unit, t, suffix)
+	var names []string
+	for _, e := range entries {
+		if re.MatchString(e.Name()) {
+			names = append(names, e.Name())
+		}
+	}
+	if t == Last {
+		slices.Sort(names)
+		return names[:max(len(names)-s.Policy.KeepLast, 0)]
+	}
+	cutoff := s.Policy.cutoff(t, now)
+	var old []string
+	for _, name := range names {
+		stamped, err := Parse(t, re.FindStringSubmatch(name)[1], now.Location())
+		if err == nil && stamped.Before(cutoff) {
+			old = append(old, name)
+		}
+	}
+	return old
 }

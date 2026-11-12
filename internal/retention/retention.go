@@ -25,7 +25,7 @@ const (
 )
 
 type Policy struct {
-	KeepMins   int
+	KeepLast   int
 	KeepDays   int
 	KeepWeeks  int
 	KeepMonths int
@@ -94,15 +94,13 @@ func isoWeekStart(year, week int, loc *time.Location) time.Time {
 func (p Policy) cutoff(t Tier, now time.Time) time.Time {
 	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	switch t {
-	case Last:
-		return now.Add(-time.Duration(p.KeepMins) * time.Minute)
 	case Daily:
-		return day.AddDate(0, 0, -p.KeepDays)
+		return day.AddDate(0, 0, 1-p.KeepDays)
 	case Weekly:
 		year, week := now.ISOWeek()
-		return isoWeekStart(year, week, now.Location()).AddDate(0, 0, -p.KeepWeeks*7)
+		return isoWeekStart(year, week, now.Location()).AddDate(0, 0, (1-p.KeepWeeks)*7)
 	default:
 		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-		return first.AddDate(0, -p.KeepMonths, 0)
+		return first.AddDate(0, 1-p.KeepMonths, 0)
 	}
 }

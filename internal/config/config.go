@@ -21,7 +21,7 @@ var (
 
 const (
 	DefaultBackupDir  = "/backups"
-	defaultKeepMins   = 1440
+	defaultKeepLast   = 1
 	defaultKeepDays   = 7
 	defaultKeepWeeks  = 4
 	defaultKeepMonths = 6
@@ -145,7 +145,7 @@ func FromVars(vars map[string]string) (*Config, error) {
 	if c.Policy.KeepMonths, err = intVar(vars, "KEEP_MONTHS", defaultKeepMonths, nonNegativeRe, "must be a non-negative integer"); err != nil {
 		return nil, err
 	}
-	if c.Policy.KeepMins, err = intVar(vars, "KEEP_MINS", defaultKeepMins, positiveRe, "must be a positive integer"); err != nil {
+	if c.Policy.KeepLast, err = intVar(vars, "KEEP_LAST", defaultKeepLast, positiveRe, "must be a positive integer"); err != nil {
 		return nil, err
 	}
 	if c.GzipLevel, err = intVar(vars, "GZIP_LEVEL", defaultGzipLevel, gzipRe, "must be between 1 and 9"); err != nil {

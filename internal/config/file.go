@@ -71,7 +71,7 @@ type heartbeatDoc struct {
 }
 
 type keep struct {
-	Mins   *int `yaml:"mins"`
+	Last   *int `yaml:"last"`
 	Days   *int `yaml:"days"`
 	Weeks  *int `yaml:"weeks"`
 	Months *int `yaml:"months"`
@@ -442,7 +442,7 @@ func (d doc) target(name string) (*Target, error) {
 		min        int
 		msg        string
 	}{
-		{"KEEP_MINS", "keep.mins", d.Keep.Mins, 1, "must be a positive integer"},
+		{"KEEP_LAST", "keep.last", d.Keep.Last, 1, "must be a positive integer"},
 		{"KEEP_DAYS", "keep.days", d.Keep.Days, 0, "must be a non-negative integer"},
 		{"KEEP_WEEKS", "keep.weeks", d.Keep.Weeks, 0, "must be a non-negative integer"},
 		{"KEEP_MONTHS", "keep.months", d.Keep.Months, 0, "must be a non-negative integer"},

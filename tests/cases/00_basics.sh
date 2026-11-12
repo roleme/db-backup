@@ -36,9 +36,9 @@ test_env_validation() {
   assert_contains "$out" "not a writable directory" "bad BACKUP_DIR message"
 
   rc=0
-  out=$(dbb "$bk" -e DRIVER=sqlite -e KEEP_MINS=0 -- backup 2>&1) || rc=$?
-  assert_eq "$rc" 1 "KEEP_MINS=0 exit code"
-  assert_contains "$out" "KEEP_MINS must be a positive integer" "KEEP_MINS message"
+  out=$(dbb "$bk" -e DRIVER=sqlite -e KEEP_LAST=0 -- backup 2>&1) || rc=$?
+  assert_eq "$rc" 1 "KEEP_LAST=0 exit code"
+  assert_contains "$out" "KEEP_LAST must be a positive integer" "KEEP_LAST message"
 
   rc=0
   out=$(dbb "$bk" -e DRIVER=sqlite -e KEEP_DAYS=abc -- backup 2>&1) || rc=$?
