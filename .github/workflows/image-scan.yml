@@ -7,12 +7,17 @@ on:
 
 permissions: {}
 
+env:
+  IMAGE: ghcr.io/roleme/db-backup:latest
+  ISSUE_TITLE: Fixable vulnerabilities in the latest image
+
 jobs:
   trivy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+      issues: write
     steps:
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
@@ -20,4 +25,39 @@ jobs:
           version: v0.76.1
 
       - name: Scan the latest release
-        run: trivy image --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 ghcr.io/roleme/db-backup:latest
+        id: scan
+        run: |
+          set +e
+          trivy image --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --format json --output report.json "$IMAGE"
+          echo "status=$?" >>"$GITHUB_OUTPUT"
+
+      - name: Update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          STATUS: ${{ steps.scan.outputs.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          number=$(gh issue list --repo "$REPO" --state open --limit 50 --json number,title \
+            --jq 'map(select(.title == env.ISSUE_TITLE))[0].number // empty')
+
+          if [ "$STATUS" = 0 ]; then
+            [ -z "$number" ] || gh issue close "$number" --repo "$REPO" --comment "Clean on $(date -u +%F): $RUN_URL"
+            exit 0
+          fi
+
+          [ -s report.json ] || { echo "::error::trivy exited $STATUS without a report"; exit 1; }
+          count=$(jq '[.Results[]?.Vulnerabilities[]?] | length' report.json)
+          list=$(jq -r '[.Results[]?.Vulnerabilities[]? | "- \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion)"] | unique | .[]' report.json)
+          body=$(printf '%s fixable HIGH or CRITICAL findings in %s on %s.\n\nPackage, installed version, fixed version:\n\n%s\n\nRun: %s\n' \
+            "$count" "$IMAGE" "$(date -u +%F)" "$list" "$RUN_URL")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$ISSUE_TITLE" --body "$body"
+          fi
+
+      - name: Fail when the scan found vulnerabilities
+        if: steps.scan.outputs.status != '0'
+        run: exit 1
