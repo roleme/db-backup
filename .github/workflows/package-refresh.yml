@@ -1,0 +1,85 @@
+name: package-refresh
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: package-refresh
+  cancel-in-progress: false
+
+env:
+  REGISTRY_IMAGE: ghcr.io/roleme/db-backup
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write
+      packages: read
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild the candidate without cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run candidate.yml --repo "$REPO" --ref main -f force=true
+          run=""
+          for _ in $(seq 1 30); do
+            run=$(START="$start" gh run list --repo "$REPO" --workflow candidate.yml --event workflow_dispatch --branch main \
+              --json databaseId,createdAt --jq 'map(select(.createdAt >= env.START))[0].databaseId // empty')
+            [ -n "$run" ] && break
+            sleep 5
+          done
+          [ -n "$run" ] || { echo "::error::candidate run did not start"; exit 1; }
+          gh run watch "$run" --repo "$REPO" --exit-status
+
+      - name: Release when installed packages changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          latest=$(gh api --paginate "repos/$REPO/git/matching-refs/tags/v" --jq '.[].ref' \
+            | sed -n 's#^refs/tags/##p' | grep -E "$semver" | sort -V | tail -n1 || true)
+          if [ -z "$latest" ]; then
+            echo "No release tag yet, nothing to do." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          sha=$(gh api "repos/$REPO/commits/main" --jq .sha)
+
+          packages() {
+            docker run --rm --platform linux/amd64 --entrypoint dpkg-query "$1" -W -f '${Package} ${Version}\n' | sort
+          }
+          packages "$REGISTRY_IMAGE:${latest#v}" >released.txt
+          packages "$REGISTRY_IMAGE:sha-$sha" >candidate.txt
+
+          if diff -u released.txt candidate.txt >changes.txt; then
+            echo "No package changes since $latest." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh workflow run release.yml --repo "$REPO" --ref main -f bump=patch -f sha="$sha"
+          {
+            echo "Dispatched a patch release after $latest. Package changes:"
+            echo
+            echo '```diff'
+            cat changes.txt
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
