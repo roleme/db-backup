@@ -1,0 +1,20 @@
+name: third-party scan
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  third-party:
+    uses: roleme/workflows/.github/workflows/third-party-scan-reusable.yml@2eacf17e3467aa538be3fce2b7066649cb90d4f3 # v2.8.0
+    permissions:
+      contents: read
+      issues: write
+      packages: read
+    with:
+      govulncheck: true
+      trivy-images: |
+        ghcr.io/roleme/db-backup:latest
