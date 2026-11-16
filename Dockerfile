@@ -15,12 +15,14 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/db-backup ./cmd/db
     && ln /out/db-backup /out/entrypoint
 
 FROM debian:trixie-slim AS mariadb-dump
+ARG APT_REFRESH=unset
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends mariadb-client \
     && rm -rf /var/lib/apt/lists/*
 
 FROM debian:trixie-slim AS pg-client
+ARG APT_REFRESH=unset
 
 COPY pgdg.asc /usr/share/keyrings/pgdg.asc
 RUN apt-get update \
@@ -31,6 +33,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 FROM debian:trixie-slim
+ARG APT_REFRESH=unset
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libpq5 liblz4-1 libreadline8t64 libzstd1 mariadb-client-core procps sqlite3 tzdata zlib1g \

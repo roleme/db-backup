@@ -22,12 +22,17 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Pick the apt refresh week
+        id: week
+        run: echo "value=$(date -u +%G-W%V)" >>"$GITHUB_OUTPUT"
+
       - name: Build image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
           tags: db-backup:test
+          build-args: APT_REFRESH=${{ steps.week.outputs.value }}
           cache-from: type=gha,scope=db-backup
           cache-to: type=gha,scope=db-backup,mode=max
 
