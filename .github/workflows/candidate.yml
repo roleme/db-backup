@@ -49,6 +49,11 @@ jobs:
         if: inputs.force || steps.lookup.outputs.digest == ''
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Pick the apt refresh week
+        id: week
+        if: inputs.force || steps.lookup.outputs.digest == ''
+        run: echo "value=$(date -u +%G-W%V)" >>"$GITHUB_OUTPUT"
+
       - name: Build and push candidate
         id: build
         if: inputs.force || steps.lookup.outputs.digest == ''
@@ -60,6 +65,7 @@ jobs:
           pull: ${{ inputs.force || false }}
           no-cache: ${{ inputs.force || false }}
           tags: ${{ env.CANDIDATE }}
+          build-args: APT_REFRESH=${{ steps.week.outputs.value }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
