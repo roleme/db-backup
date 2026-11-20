@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   zizmor:
-    uses: roleme/workflows/.github/workflows/zizmor-reusable.yml@d85bd6ff3e6c1bf92907238b745be77337147d4b # v2.16.1
+    uses: roleme/workflows/.github/workflows/zizmor-reusable.yml@24ba589b45628fbd55eb20eed31dc3a54fa6edf0 # v2.17.0
