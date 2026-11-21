@@ -12,13 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 var (
 	nameRe      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 	envRefRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	yamlLineRe  = regexp.MustCompile(`^line [0-9]+: `)
 	yamlTypeRe  = regexp.MustCompile(` in type [^ ]+$`)
 	fieldByKey  = map[string]string{"DB_PASSWORD_ENV": "password_env", "HC_PING_URL_ENV": "ping_url_env", "HC_VERIFY_PING_URL_ENV": "verify_ping_url_env"}
 	listBreaker = strings.NewReplacer(",", "", "\n", "", "\r", "")
@@ -254,11 +253,11 @@ func decodeStrict[T any](n *yaml.Node) (T, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
 	if err := dec.Decode(&d); err != nil && !errors.Is(err, io.EOF) {
-		var te *yaml.TypeError
-		if errors.As(err, &te) {
-			msgs := make([]string, len(te.Errors))
-			for i, m := range te.Errors {
-				msgs[i] = yamlTypeRe.ReplaceAllString(yamlLineRe.ReplaceAllString(m, ""), "")
+		var le *yaml.LoadErrors
+		if errors.As(err, &le) {
+			msgs := make([]string, len(le.Errors))
+			for i, e := range le.Errors {
+				msgs[i] = yamlTypeRe.ReplaceAllString(e.Message, "")
 			}
 			return d, errors.New(strings.Join(msgs, "; "))
 		}
