@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   scan:
-    uses: roleme/workflows/.github/workflows/gitleaks-reusable.yml@24ba589b45628fbd55eb20eed31dc3a54fa6edf0 # v2.17.0
+    uses: roleme/workflows/.github/workflows/gitleaks-reusable.yml@836b0647b718d8e9643b038d867c78aa5f268e89 # v2.17.1
     permissions:
       contents: read
       pull-requests: read
