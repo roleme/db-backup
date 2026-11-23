@@ -11,4 +11,4 @@ permissions:
 
 jobs:
   validate-renovate:
-    uses: roleme/workflows/.github/workflows/validate-renovate-reusable.yml@24ba589b45628fbd55eb20eed31dc3a54fa6edf0 # v2.17.0
+    uses: roleme/workflows/.github/workflows/validate-renovate-reusable.yml@836b0647b718d8e9643b038d867c78aa5f268e89 # v2.17.1
