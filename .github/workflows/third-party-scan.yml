@@ -9,7 +9,7 @@ permissions: {}
 
 jobs:
   third-party:
-    uses: roleme/workflows/.github/workflows/third-party-scan-reusable.yml@afaca4a6166ff8e17964951fbae10c5c433467fa # v2.17.2
+    uses: roleme/workflows/.github/workflows/third-party-scan-reusable.yml@2d294af28d13a0acd560494d2d62c9708a46b439 # v2.17.3
     permissions:
       contents: read
       issues: write
